@@ -1,36 +1,188 @@
-Absolutely, Mark. Here's a **unified MCP design doc draft**—general-purpose, "internal tools only," with BotFather as the first plugin/example. Timeout is made overridable per job, and the plugin architecture is foregrounded. This is copy-paste-ready for your repo, wiki, or Notion.
+# MCP (Master Control Program) — Internal Tools Orchestration Daemon (STDIO Edition)
 
----
+## Overview
 
-# 🛠️ MCP (Master Control Program) — Internal Tools Orchestration Server
-
-## **Overview**
-
-The MCP is a modular, extensible **internal orchestration server** designed to securely expose command-line tools and automation scripts ("plugins") to trusted agents, operators, and internal systems. It centralizes control of critical automations—such as Telegram bot management (BotFather), devops scripts, or other host-level tasks—behind a unified, queue-based API.
+The MCP is a modular, extensible **internal orchestration daemon** designed to securely expose command-line tools and automation scripts ("plugins") to trusted agents, operators, and internal systems. It centralizes control of critical automations—such as Telegram bot management (BotFather), devops scripts, or other host-level tasks—behind a unified, queue-based STDIO protocol.
 
 **MCP is for internal use only:**
-It should be deployed behind the firewall, on trusted hosts, and *never* exposed to the public internet without authentication and additional hardening.
+It should be deployed behind the firewall, on trusted hosts, and *never* exposed to the public internet.
 
 ---
 
-## **Key Features**
+## Key Features
 
 * **Modular Plugin Architecture:**
   Each supported command-line tool or script is registered as a "plugin" (e.g., `botfather`, `devops`, `monitoring`, etc.).
-* **Unified HTTP API (or Unix socket):**
-  All tools are accessible via a single API endpoint, with per-plugin routing.
+* **Unified STDIO Protocol:**
+  All tools are accessible via a single STDIO message protocol (newline-delimited JSON).
 * **Queue/Serialization:**
   Jobs are queued and executed serially by default (to prevent resource contention and concurrency bugs).
 * **Extensible:**
   New plugins/tools can be added easily—no core MCP changes required.
 * **Help/Introspection:**
-  Agents and humans can query available plugins/commands and usage details via a `/help` endpoint.
+  Agents and humans can query available plugins/commands and usage details via the `help` command.
 * **Pluggable Timeouts:**
   Each job may specify a custom timeout; MCP enforces a default but allows override per job.
 * **Audit Logging:**
   All job requests and results are logged (with sensitive data redacted) for audit and debugging.
 
 ---
+
+## MCP Architecture (STDIO)
+
+* **mcp_stdio.py** — Main daemon script. Reads JSON requests from `stdin`, routes them to plugins, writes JSON responses to `stdout`.
+* **plugins/** — Directory for all available command-line tools/scripts (each as a module/wrapper)
+* **queue/** — Job management/serialization (using `queue.Queue`)
+* **.env / config** — Environment variables and sensitive credentials (never logged)
+* **README.md / docs/** — Documentation for devs and agents
+
+---
+
+## STDIO Message Protocol
+
+### Request (stdin → MCP)
+```json
+{
+  "id": "uuid4",
+  "command": "run" | "help" | "reload-help" | "health",
+  "payload": {
+    // only for "run"
+    "plugin": "botfather",
+    "action": "send-message",
+    "args": {"msg": "/newbot"},
+    "timeout": 60
+  }
+}
+```
+*One JSON object per line. Always end with `\n` and flush.*
+
+### Response (MCP → stdout)
+```json
+{
+  "id": "same-uuid4",
+  "status": "queued" | "started" | "success" | "error" | "timeout",
+  "payload": { /* result or error info */ }
+}
+```
+*Multiple status events per job (`queued` → `started` → terminal state).* 
+
+---
+
+## Commands
+
+- `run`: Execute a plugin action
+- `help`: Return help cache
+- `reload-help`: Rebuild help cache
+- `health`: Return health status
+
+---
+
+## Error Handling
+
+| Condition                   | MCP `status` | `payload.error`              |
+| --------------------------- | ------------ | ---------------------------- |
+| CLI exits non-zero          | "error"      | stderr or parsed error field |
+| Timeout                     | "timeout"    | "timeout"                   |
+| JSON decode fail            | "error"      | "bad_json"                  |
+| Unknown plugin / action     | "error"      | "not_found"                 |
+
+---
+
+## Plugin (Tool) Requirements
+
+* **CLI-based:**
+  Plugins must be executable as command-line scripts, accept arguments, and print results to stdout (JSON only).
+* **Exit Codes:**
+  Must return exit code 0 for success, nonzero for error (with error info in output).
+* **Output Format:**
+  Must return JSON on both success and error.
+* **Timeout-Aware:**
+  Should not run longer than needed. MCP enforces a global or per-job timeout, but plugins should also fail gracefully if interrupted.
+
+---
+
+## Queue Implementation
+
+* **In-memory queue** for v1 (jobs do not survive restarts)
+* **Single worker thread** for job serialization
+* **Job Status Tracking:**
+  - Unique job ID per request
+  - Status states: queued, started, success, error, timeout
+
+---
+
+## Security Model
+
+* **Internal use only** (no network exposure)
+* **File permissions** and environment variable secrets
+* **Audit logging** (no sensitive data)
+* **Plugin input validation**
+
+---
+
+## Monitoring and Observability
+
+* **Log file:** All job invocations and results are logged to `mcp.log`
+* **Health check:** Use the `health` command via STDIO
+* **Metrics:** (Optional/future) Prometheus/Grafana integration if needed
+
+---
+
+## Deployment Strategy
+
+* **Single instance** for v1
+* **Docker/container support** (optional)
+* **Config via `.env`**
+
+---
+
+## Plugin Folder Structure and Autodiscovery
+
+- Each plugin must reside in its own directory under `plugins/` (e.g., `plugins/botfather/`).
+- Each plugin directory must contain a `cli.py` entrypoint script.
+- MCP will automatically discover plugins by scanning the `plugins/` directory for subdirectories containing a `cli.py` file.
+- MCP will use `python plugins/<plugin>/cli.py --help` and `python plugins/<plugin>/cli.py <command> --help` to introspect available commands and arguments via argparse.
+- All plugin commands and arguments must be documented and addressable via argparse in CLI mode.
+- Plugin output must be JSON (success or error), and exit codes must follow the convention: 0 = success, nonzero = error.
+
+---
+
+## Example Directory Structure
+
+```
+mcp/
+  plugins/
+    botfather/
+      cli.py
+      utils.py
+    devops/
+      cli.py
+      deploy.py
+```
+
+---
+
+## Best Practices
+
+* Plugin output and errors must always be parseable by MCP.
+* Never run more than one Telethon/SQLite-based plugin action at a time (serialization is handled by MCP queue).
+* Timeout is overridable for long-running jobs (specify in request payload).
+* Document every command in plugin help so agents can stay in sync.
+
+---
+
+## Summary
+
+MCP is a universal "internal API for command-line tools," allowing your stack to coordinate automations, bot management, and DevOps with perfect isolation and serialization.
+
+First up: BotFather CLI plugin.
+Next: Add any host-level or agent action as you scale.
+
+---
+
+# [ARCHIVE] Legacy HTTP/SSE API (for historical context)
+
+_The following sections describe the original HTTP/SSE API, which is no longer implemented. MCP is now STDIO-only. This is retained for reference only._
 
 ## **MCP Architecture**
 
