@@ -2,7 +2,17 @@
 
 Internal tools orchestration server for managing command-line tools and automation scripts.
 
-## Setup
+## Documentation
+
+Comprehensive documentation is available in the `docs/` directory:
+
+- [Getting Started](docs/getting-started.md) - Installation and basic usage
+- [API Reference](docs/api-reference.md) - Detailed API documentation
+- [Plugin Development](docs/plugin-development.md) - Guide for creating plugins
+- [Security Guide](docs/security.md) - Security best practices
+- [Monitoring Guide](docs/monitoring.md) - Monitoring and observability
+
+## Quick Start
 
 1. Create a virtual environment:
 ```bash
@@ -42,6 +52,12 @@ pytest
   - `models/` - Pydantic models
   - `config.py` - Configuration management
   - `logger.py` - Logging setup
+- `docs/` - Documentation
+  - `getting-started.md` - Installation and usage guide
+  - `api-reference.md` - API documentation
+  - `plugin-development.md` - Plugin development guide
+  - `security.md` - Security guidelines
+  - `monitoring.md` - Monitoring guide
 
 ## API Documentation
 
