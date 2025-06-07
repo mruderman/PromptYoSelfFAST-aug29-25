@@ -1,6 +1,43 @@
 # Sanctum Letta MCP
 
-Internal tools orchestration server for managing command-line tools and automation scripts.
+A powerful, modular orchestration server designed to securely expose and manage command-line tools and automation scripts within your internal infrastructure. Built around the Letta Agentic AI framework, MCP provides a unified interface for controlling critical automations while maintaining security and reliability.
+
+## Key Features
+
+🚀 **Modular Plugin Architecture**
+- Easily extendable with custom plugins
+- Each tool runs in isolation
+- No core changes needed for new tools
+
+🛡️ **Enterprise-Grade Security**
+- Internal use only design
+- Queue-based execution prevents resource contention
+- Comprehensive audit logging
+- Sensitive data redaction
+
+⚡ **High Performance**
+- Asynchronous job processing
+- Configurable timeouts per job
+- Efficient resource utilization
+- Built on FastAPI for speed
+
+🔄 **Robust Queue System**
+- Serial execution by default
+- Prevents concurrency issues
+- Customizable job priorities
+- Job status tracking
+
+🔍 **Built-in Observability**
+- Prometheus metrics
+- Structured JSON logging
+- Health check endpoints
+- Performance monitoring
+
+🤖 **AI-Ready Integration**
+- Designed for Letta Agentic AI framework
+- Natural language command processing
+- Automated workflow orchestration
+- Intelligent error handling
 
 ## Documentation
 
