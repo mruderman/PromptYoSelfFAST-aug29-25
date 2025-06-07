@@ -40,6 +40,7 @@ class MCPStdio:
         self.worker = threading.Thread(target=self.worker_loop, daemon=True)
         self.worker.start()
         signal.signal(signal.SIGTERM, self.handle_sigterm)
+        signal.signal(signal.SIGINT, self.handle_sigterm)  # Handle Ctrl+C
 
     def discover_plugins(self):
         plugins = {}
@@ -60,10 +61,11 @@ class MCPStdio:
             except Exception as e:
                 self.help_cache[plugin_name] = f"Error: {e}"
 
-    def handle_sigterm(self, signum, frame):
+    def handle_sigterm(self, signum=None, frame=None):
         self.shutdown_flag.set()
         self.send_event({"status": "shutdown"})
         sys.stdout.flush()
+        self.worker.join(timeout=5)
         sys.exit(0)
 
     def send_event(self, obj: Dict[str, Any]):
@@ -164,6 +166,9 @@ class MCPStdio:
                 logger.info({"job_id": job.id, "plugin": plugin, "action": action, "status": "queued"})
             else:
                 self.send_event({"id": req_id, "status": "error", "payload": {"error": "not_found"}})
+        # Wait for worker to finish (with timeout)
+        self.worker.join(timeout=5)
+        sys.exit(0)
 
 if __name__ == "__main__":
     MCPStdio().main() 
