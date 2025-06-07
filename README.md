@@ -1,106 +1,67 @@
-# Sanctum Letta MCP
+# Sanctum Letta MCP (STDIO Edition)
 
-A powerful, modular orchestration server designed to securely expose and manage command-line tools and automation scripts within your internal infrastructure. Built around the Letta Agentic AI framework, MCP provides a unified interface for controlling critical automations while maintaining security and reliability.
+A powerful, modular orchestration server designed to securely expose and manage command-line tools and automation scripts within your internal infrastructure. Built for the Letta Agentic AI framework, MCP now operates exclusively as a **STDIO daemon**—no HTTP, no sockets, no ports.
 
 ## Key Features
 
-🚀 **Modular Plugin Architecture**
-- Easily extendable with custom plugins
-- Each tool runs in isolation
-- No core changes needed for new tools
-
-🛡️ **Enterprise-Grade Security**
-- Internal use only design
-- Queue-based execution prevents resource contention
-- Comprehensive audit logging
-- Sensitive data redaction
-
-⚡ **High Performance**
-- Asynchronous job processing
-- Configurable timeouts per job
-- Efficient resource utilization
-- Built on FastAPI for speed
-
-🔄 **Robust Queue System**
-- Serial execution by default
-- Prevents concurrency issues
-- Customizable job priorities
-- Job status tracking
-
-🔍 **Built-in Observability**
-- Prometheus metrics
-- Structured JSON logging
-- Health check endpoints
-- Performance monitoring
-
-🤖 **AI-Ready Integration**
-- Designed for Letta Agentic AI framework
-- Natural language command processing
-- Automated workflow orchestration
-- Intelligent error handling
-
-## Documentation
-
-Comprehensive documentation is available in the `docs/` directory:
-
-- [Getting Started](docs/getting-started.md) - Installation and basic usage
-- [API Reference](docs/api-reference.md) - Detailed API documentation
-- [Plugin Development](docs/plugin-development.md) - Guide for creating plugins
-- [Security Guide](docs/security.md) - Security best practices
-- [Monitoring Guide](docs/monitoring.md) - Monitoring and observability
+- **STDIO Daemon:** Communicates via newline-delimited JSON on stdin/stdout
+- **Modular Plugin Architecture:** Easily extendable with custom plugins
+- **Single Worker Thread:** Serializes all plugin execution for safety
+- **Comprehensive Audit Logging:** All requests and results are logged (no sensitive data)
+- **Internal-Only:** No network exposure, designed for container or local use
 
 ## Quick Start
 
-1. Create a virtual environment:
-```bash
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+1. Clone the repository and install dependencies:
+   ```bash
+   git clone https://github.com/actuallyrizzn/sanctum-letta-mcp.git
+   cd sanctum-letta-mcp
+   python -m venv venv
+   source venv/bin/activate  # On Windows: venv\Scripts\activate
+   pip install -r requirements.txt
+   ```
+
+2. Run the MCP STDIO daemon:
+   ```bash
+   python -m mcp.mcp_stdio
+   ```
+   or (if running as a subprocess):
+   ```bash
+   python mcp/mcp_stdio.py
+   ```
+
+## Example JSON Conversation
+
+**Request (stdin → MCP):**
+```json
+{"id": "1234", "command": "run", "payload": {"plugin": "botfather", "action": "click-button", "args": {"button-text": "Payments", "msg-id": 12345678}}}
 ```
 
-2. Install dependencies:
-```bash
-pip install -r requirements.txt
+**Response (MCP → stdout):**
+```json
+{"id": "1234", "status": "queued", "payload": {}}
+{"id": "1234", "status": "started", "payload": {}}
+{"id": "1234", "status": "success", "payload": {"result": "Clicked button Payments on message 12345678"}}
 ```
 
-3. Create a `.env` file with your configuration:
-```bash
-cp .env.example .env
-# Edit .env with your settings
-```
+*All messages are single-line JSON, newline-delimited, and flushed immediately.*
 
-## Running the Server
+## Documentation
 
-```bash
-uvicorn mcp.main:app --reload
-```
-
-## Running Tests
-
-```bash
-pytest
-```
+- [Getting Started](docs/getting-started.md) - Installation and basic usage (STDIO)
+- [API Reference](docs/api-reference.md) - STDIO message protocol
+- [Plugin Development](docs/plugin-development.md) - Guide for creating plugins
+- [Security Guide](docs/security.md) - Security best practices
+- [Monitoring Guide](docs/monitoring.md) - Logging and observability
 
 ## Project Structure
 
 - `mcp/` - Main package
-  - `main.py` - FastAPI application entry point
+  - `mcp_stdio.py` - STDIO daemon entrypoint
   - `plugins/` - Plugin implementations
-  - `queue/` - Job queue implementation
-  - `models/` - Pydantic models
   - `config.py` - Configuration management
   - `logger.py` - Logging setup
 - `docs/` - Documentation
-  - `getting-started.md` - Installation and usage guide
-  - `api-reference.md` - API documentation
-  - `plugin-development.md` - Plugin development guide
-  - `security.md` - Security guidelines
-  - `monitoring.md` - Monitoring guide
-
-## API Documentation
-
-Once the server is running, visit:
-- Swagger UI: http://localhost:8000/docs
-- ReDoc: http://localhost:8000/redoc 
 
 ## License
 

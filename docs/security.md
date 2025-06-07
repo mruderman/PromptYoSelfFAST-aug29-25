@@ -1,192 +1,35 @@
-# Security Guide
+# Security Guide (STDIO Edition)
 
-This document outlines security best practices and guidelines for using and deploying MCP.
+This document outlines security best practices for MCP in STDIO mode.
 
 ## Security Model
 
-MCP is designed as an internal tool and follows these security principles:
-
-1. **Internal Use Only**
-   - Deploy behind firewall
-   - Bind to localhost or private network
-   - No public internet exposure
-
-2. **Least Privilege**
-   - Minimal required permissions
-   - No root/admin access
-   - Plugin-specific permissions
-
-3. **Defense in Depth**
-   - Multiple security layers
-   - Input validation
-   - Output sanitization
-   - Error handling
+- MCP is an internal-only tool—no network exposure, no open ports.
+- All communication is via stdin/stdout (local subprocess).
+- Plugins are executed as subprocesses and must not leak sensitive data.
 
 ## Deployment Security
 
-### Network Security
-
-1. **Network Isolation**
-   - Deploy in private network
-   - Use internal DNS
-   - Restrict access to trusted IPs
-
-2. **Firewall Rules**
-   - Allow only required ports
-   - Block external access
-   - Monitor traffic
-
-3. **Load Balancer**
-   - SSL/TLS termination
-   - Rate limiting
-   - IP filtering
-
-### Server Security
-
-1. **System Hardening**
-   - Regular updates
-   - Minimal services
-   - Secure defaults
-
-2. **User Management**
-   - Dedicated service account
-   - No root access
-   - Limited permissions
-
-3. **File System**
-   - Secure permissions
-   - Regular backups
-   - Audit logging
+- Run MCP only in trusted environments (e.g., inside Letta container).
+- Ensure only trusted users can launch or interact with the daemon.
+- Secure file permissions for all plugin scripts and config files.
 
 ## Plugin Security
 
-### Development Guidelines
+- Validate all input in plugins.
+- Never log or print sensitive data (API keys, tokens, etc.).
+- Use environment variables for secrets.
+- Handle errors gracefully and return only necessary error info.
 
-1. **Input Validation**
-   ```python
-   def validate_input(args: Dict[str, Any]) -> bool:
-       """Validate plugin input."""
-       required = ["api_key", "action"]
-       return all(key in args for key in required)
-   ```
+## Logging & Auditing
 
-2. **Error Handling**
-   ```python
-   def safe_execute(func):
-       """Decorator for safe execution."""
-       def wrapper(*args, **kwargs):
-           try:
-               return func(*args, **kwargs)
-           except Exception as e:
-               logger.error(f"Error in {func.__name__}: {str(e)}")
-               return {"status": "error", "message": "Internal error"}
-       return wrapper
-   ```
-
-3. **Sensitive Data**
-   ```python
-   def sanitize_output(data: Dict[str, Any]) -> Dict[str, Any]:
-       """Remove sensitive data from output."""
-       sensitive_keys = ["password", "api_key", "token"]
-       return {k: v for k, v in data.items() if k not in sensitive_keys}
-   ```
-
-### Best Practices
-
-1. **Configuration**
-   - Use environment variables
-   - No hardcoded secrets
-   - Secure defaults
-
-2. **Authentication**
-   - Validate credentials
-   - Use secure protocols
-   - Implement timeouts
-
-3. **Authorization**
-   - Check permissions
-   - Validate actions
-   - Log access
-
-4. **Data Protection**
-   - Encrypt sensitive data
-   - Sanitize output
-   - Secure storage
-
-## Monitoring and Auditing
-
-### Logging
-
-1. **Audit Logs**
-   ```python
-   def log_audit(action: str, user: str, details: Dict[str, Any]):
-       """Log security-relevant events."""
-       logger.info({
-           "timestamp": datetime.utcnow().isoformat(),
-           "action": action,
-           "user": user,
-           "details": sanitize_output(details)
-       })
-   ```
-
-2. **Error Logs**
-   ```python
-   def log_error(error: Exception, context: Dict[str, Any]):
-       """Log errors with context."""
-       logger.error({
-           "timestamp": datetime.utcnow().isoformat(),
-           "error": str(error),
-           "context": sanitize_output(context)
-       })
-   ```
-
-### Monitoring
-
-1. **Health Checks**
-   - Regular status checks
-   - Resource monitoring
-   - Alert on issues
-
-2. **Performance**
-   - Response times
-   - Resource usage
-   - Queue length
-
-3. **Security**
-   - Failed attempts
-   - Suspicious activity
-   - Rate limiting
+- All requests and results are logged (excluding sensitive data).
+- Regularly review logs for suspicious activity or errors.
 
 ## Incident Response
 
-### Detection
-
-1. **Monitoring**
-   - Log analysis
-   - Alert thresholds
-   - Anomaly detection
-
-2. **Investigation**
-   - Log review
-   - System state
-   - User activity
-
-### Response
-
-1. **Containment**
-   - Isolate affected systems
-   - Block suspicious IPs
-   - Disable compromised accounts
-
-2. **Recovery**
-   - Restore from backup
-   - Patch vulnerabilities
-   - Update security measures
-
-3. **Post-Incident**
-   - Root cause analysis
-   - Update procedures
-   - Document lessons
+- If compromise is suspected, stop the daemon, rotate secrets, and review logs.
+- Restore from backup if necessary.
 
 ## Compliance
 

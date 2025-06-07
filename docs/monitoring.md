@@ -1,95 +1,37 @@
-# Monitoring Guide
+# Monitoring Guide (STDIO Edition)
 
-This document covers monitoring, logging, and observability for the MCP system.
+This document covers monitoring, logging, and observability for the MCP STDIO daemon.
 
 ## Logging
 
-### Log Configuration
+- All requests and terminal responses are logged using `logger.py`.
+- Logs include job ID, plugin, action, status, and duration.
+- Sensitive data is never logged.
+- Log files are written to `mcp.log`.
 
-MCP uses a structured logging system that can be configured in `mcp/config.py`:
+## Observability
 
-```python
-LOGGING_CONFIG = {
-    "version": 1,
-    "disable_existing_loggers": False,
-    "formatters": {
-        "json": {
-            "()": "pythonjsonlogger.jsonlogger.JsonFormatter",
-            "format": "%(asctime)s %(name)s %(levelname)s %(message)s"
-        }
-    },
-    "handlers": {
-        "console": {
-            "class": "logging.StreamHandler",
-            "formatter": "json",
-            "stream": "ext://sys.stdout"
-        },
-        "file": {
-            "class": "logging.handlers.RotatingFileHandler",
-            "formatter": "json",
-            "filename": "mcp.log",
-            "maxBytes": 10485760,  # 10MB
-            "backupCount": 5
-        }
-    },
-    "root": {
-        "level": "INFO",
-        "handlers": ["console", "file"]
-    }
-}
-```
+- Monitor CPU and RAM usage of the MCP process.
+- Monitor queue length and job durations.
+- Use log analysis for troubleshooting and auditing.
 
-### Log Levels
+## Health Checks
 
-- **DEBUG**: Detailed information for debugging
-- **INFO**: General operational information
-- **WARNING**: Warning messages for potential issues
-- **ERROR**: Error events that might still allow the application to continue
-- **CRITICAL**: Critical events that may lead to application failure
+- Use the `health` command via STDIO to check daemon status.
+- Example:
+  ```json
+  {"id": "abcd", "command": "health"}
+  ```
+  Response:
+  ```json
+  {"id": "abcd", "status": "success", "payload": "ok"}
+  ```
 
-### Log Categories
+## Troubleshooting
 
-1. **Access Logs**
-   ```python
-   logger.info({
-       "type": "access",
-       "method": request.method,
-       "path": request.path,
-       "status": response.status_code,
-       "duration_ms": duration
-   })
-   ```
-
-2. **Plugin Logs**
-   ```python
-   logger.info({
-       "type": "plugin",
-       "plugin": plugin_name,
-       "command": command,
-       "status": status,
-       "duration_ms": duration
-   })
-   ```
-
-3. **Error Logs**
-   ```python
-   logger.error({
-       "type": "error",
-       "error": str(error),
-       "traceback": traceback.format_exc(),
-       "context": context
-   })
-   ```
-
-4. **Audit Logs**
-   ```python
-   logger.info({
-       "type": "audit",
-       "action": action,
-       "user": user,
-       "details": sanitized_details
-   })
-   ```
+- Check `mcp.log` for errors and job status.
+- Ensure all plugin output is valid JSON.
+- Use the `reload-help` command to refresh help cache if plugins change.
 
 ## Metrics
 
@@ -156,41 +98,6 @@ QUEUE_WAIT_TIME = Histogram(
    - Request duration
    - Plugin execution time
    - Queue wait time
-
-## Health Checks
-
-### Endpoint
-
-MCP provides a health check endpoint at `/health`:
-
-```python
-@app.route('/health')
-def health_check():
-    return {
-        "status": "healthy",
-        "version": VERSION,
-        "uptime": get_uptime(),
-        "queue_size": get_queue_size(),
-        "plugins": get_plugin_status()
-    }
-```
-
-### Components
-
-1. **Server Health**
-   - Process status
-   - Memory usage
-   - CPU usage
-
-2. **Plugin Health**
-   - Plugin availability
-   - Last execution time
-   - Error rate
-
-3. **Queue Health**
-   - Queue size
-   - Processing rate
-   - Wait times
 
 ## Alerting
 

@@ -1,13 +1,13 @@
-# Plugin Development Guide
+# Plugin Development Guide (STDIO Edition)
 
-This guide explains how to create and integrate new plugins into the MCP system.
+This guide explains how to create and integrate new plugins into the MCP system (STDIO mode).
 
 ## Plugin Architecture
 
 MCP plugins are Python modules that follow a specific structure and interface. Each plugin should:
 
 1. Be placed in the `mcp/plugins/` directory
-2. Implement the required interface
+2. Implement the required CLI interface
 3. Handle its own configuration and dependencies
 4. Provide clear documentation
 
@@ -27,9 +27,51 @@ mcp/plugins/
 ### Required Files
 
 1. `__init__.py` - Plugin registration and metadata
-2. `cli.py` - Command-line interface implementation
+2. `cli.py` - Command-line interface implementation (invoked by MCP via subprocess)
 3. `config.py` - Configuration handling
 4. `README.md` - Plugin documentation
+
+## CLI Invocation
+
+- Plugins are executed by MCP as subprocesses:
+  ```bash
+  python mcp/plugins/my_plugin/cli.py <command> <args as JSON>
+  ```
+- Plugins must print a single-line JSON object to stdout and exit.
+- Plugins must return exit code 0 for success, nonzero for error.
+
+## Example CLI
+
+```python
+import json
+import sys
+
+def run_command(command, args):
+    if command == "my-command":
+        return {"result": f"Ran with {args}"}
+    return {"error": "Unknown command"}
+
+if __name__ == "__main__":
+    if len(sys.argv) < 2:
+        print(json.dumps({"error": "No command specified"}))
+        sys.exit(1)
+    command = sys.argv[1]
+    args = json.loads(sys.argv[2]) if len(sys.argv) > 2 else {}
+    try:
+        result = run_command(command, args)
+        print(json.dumps(result))
+        sys.exit(0 if "error" not in result else 1)
+    except Exception as e:
+        print(json.dumps({"error": str(e)}))
+        sys.exit(1)
+```
+
+## Best Practices
+
+- Always output single-line JSON
+- Never log sensitive data
+- Document all commands and arguments
+- Test error and edge cases
 
 ## Creating a New Plugin
 

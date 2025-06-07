@@ -306,3 +306,150 @@ mcp/
 - Zero config: Drop a new plugin folder in, and it's auto-discovered.
 - Self-documenting: Argparse help is the single source of truth for commands/args.
 - Extensible: No MCP code changes needed for new plugins.
+
+---
+
+# Addendum: MCP → STDIO Refactor Plan (New Direction)
+
+*A single-source design brief for the dev-swarm. Copy-paste into the repo / ticket board exactly as-is.*
+
+---
+
+### Goal
+
+Refactor the current SSE-based MCP into a **STDIO daemon** that Letta can launch as a local subprocess. All communication must occur **exclusively via stdin/stdout** (newline-delimited JSON messages).
+No HTTP, no sockets, no ports, no Docker networking.
+
+---
+
+## 1 · High-Level Architecture
+
+| Component         | Responsibility                                                                                                     |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------ |
+| **mcp_stdio.py**  | Long-running process. Reads JSON requests from `stdin`, routes them to plugins, writes JSON responses to `stdout`. |
+| **plugins/**      | Unchanged directory of CLI tools (BotFather, DevOps, etc.).                                                        |
+| **help cache**    | Built once at daemon start and on explicit `reload-help` command.                                                  |
+| **job queue**     | In-process `queue.Queue` (single worker thread) to serialize plugin calls.                                         |
+
+---
+
+## 2 · Message Protocol
+
+### 2.1 Request (stdin → MCP)
+
+```json
+{
+  "id": "uuid4",
+  "command": "run" | "help" | "reload-help" | "health",
+  "payload": {
+    // only for "run"
+    "plugin": "botfather",
+    "action": "send-message",
+    "args": {"msg": "/newbot"},
+    "timeout": 60          // optional, overrides default
+  }
+}
+```
+
+*One JSON object **per line**. Always end with `\n` and flush.*
+
+### 2.2 Response (MCP → stdout)
+
+```json
+{
+  "id": "same-uuid4",
+  "status": "queued" | "started" | "success" | "error" | "timeout",
+  "payload": { /* arbitrary result or error info */ }
+}
+```
+
+*Send **multiple** status events per job (`queued` → `started` → terminal state).* 
+
+---
+
+## 3 · Daemon Lifecycle
+
+1. **Startup**
+   * Build help cache (`cli.py --help` for each plugin).
+   * Print `{status: "ready"}` to stdout and flush.
+2. **Main loop**
+   * Block on `stdin.readline()`.
+   * Parse JSON; ignore/404 on invalid.
+   * Dispatch:
+     * `help` → return full help cache.
+     * `reload-help` → rebuild cache, return `"ok"`.
+     * `health` → return `"ok"`.
+     * `run` → enqueue job, immediately reply `"queued"`, then stream subsequent events.
+3. **Shutdown**
+   * On EOF (Ctrl-D) or SIGTERM, flush `"shutdown"` event and exit 0.
+
+---
+
+## 4 · Plugin Invocation Rules
+
+* Path discovery unchanged (`plugins/<name>/cli.py`).
+* Spawn with `subprocess.run([...], capture_output=True, text=True, timeout=<job-timeout>)`.
+* Expect **JSON on stdout** ; fallback to raw text if parse fails.
+
+---
+
+## 5 · Timeouts & Error Handling
+
+| Condition                   | MCP `status` | `payload.error`              |
+| --------------------------- | ------------ | ---------------------------- |
+| CLI exits non-zero          | `"error"`    | stderr or parsed error field |
+| `subprocess.TimeoutExpired` | `"timeout"`  | `"timeout"`                  |
+| JSON decode fail            | `"error"`    | `"bad_json"`                 |
+| Unknown plugin / action     | `"error"`    | `"not_found"`                |
+
+---
+
+## 6 · Logging & Observability
+
+* Use existing `logger.py`.
+* Log **every** request & terminal response with job ID, plugin, action, status, duration.
+* *Do **NOT** log sensitive env vars or token values.*
+
+---
+
+## 7 · Security
+
+* **Internal-only** tool — no network exposure.
+* Running in Letta's container means file paths must be baked into the image or volume-mounted.
+
+---
+
+## 8 · Deliverables
+
+1. **`mcp_stdio.py`** (new entrypoint).
+2. Unit tests:
+   * Round-trip `run → success` and `run → error`.
+   * `help` and `reload-help` actions.
+3. **Updated README** section:
+   * How to run MCP in stdio mode.
+   * Example JSON conversation.
+4. **Dockerfile changes** (if needed) to place `mcp_stdio.py` inside Letta container.
+
+---
+
+## 9 · Negative Prompts (DO **NOT**)
+
+* **DO NOT** listen on any TCP/UDP port.
+* **DO NOT** depend on asyncio `StreamingResponse`, SSE, or websockets.
+* **DO NOT** print multi-line JSON objects (must be single-line newline-delimited).
+* **DO NOT** spawn more than **one** worker thread for plugin execution.
+* **DO NOT** remove existing plugin directory structure.
+* **DO NOT** log plaintext API keys or Telegram session data.
+
+---
+
+### 📌 Acceptance Criteria
+
+* Letta can "Add Server" in **stdio** mode with
+  `Command: python3 /path/to/mcp_stdio.py`
+  `Arguments: (none)`
+  and run BotFather actions end-to-end.
+* All unit tests pass.
+* CPU & RAM footprint comparable to current MCP.
+
+---

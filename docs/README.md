@@ -1,52 +1,40 @@
-# MCP Documentation
+# MCP Documentation (STDIO Edition)
 
-Welcome to the MCP (Master Control Program) documentation. This documentation will help you understand, set up, and use the MCP system effectively.
+Welcome to the MCP (Master Control Program) documentation. This documentation will help you understand, set up, and use the MCP system in STDIO mode (no HTTP, no SSE).
 
 ## Table of Contents
 
 1. [Getting Started](getting-started.md)
-   - Installation
-   - Configuration
-   - Basic Usage
-
-2. [Architecture](architecture.md)
-   - System Overview
-   - Components
-   - Data Flow
-
-3. [API Reference](api-reference.md)
-   - Endpoints
-   - Request/Response Formats
-   - Error Handling
-
-4. [Plugin Development](plugin-development.md)
-   - Plugin Architecture
-   - Creating New Plugins
-   - Best Practices
-
-5. [Security](security.md)
-   - Security Model
-   - Access Control
-   - Best Practices
-
-6. [Monitoring](monitoring.md)
-   - Logging
-   - Metrics
-   - Troubleshooting
-
-7. [Project Plan](project-plan.md)
-   - Design Decisions
-   - Roadmap
-   - Future Enhancements
+2. [API Reference](api-reference.md)
+3. [Plugin Development](plugin-development.md)
+4. [Security](security.md)
+5. [Monitoring](monitoring.md)
+6. [Project Plan](project-plan.md)
 
 ## Quick Start
 
-For a quick start guide, please see [Getting Started](getting-started.md).
+For a quick start guide, see [Getting Started](getting-started.md).
+
+## STDIO Usage Example
+
+**Request (stdin → MCP):**
+```json
+{"id": "1234", "command": "run", "payload": {"plugin": "botfather", "action": "click-button", "args": {"button-text": "Payments", "msg-id": 12345678}}}
+```
+
+**Response (MCP → stdout):**
+```json
+{"id": "1234", "status": "queued", "payload": {}}
+{"id": "1234", "status": "started", "payload": {}}
+{"id": "1234", "status": "success", "payload": {"result": "Clicked button Payments on message 12345678"}}
+```
+
+*All messages are single-line JSON, newline-delimited, and flushed immediately.*
 
 ## Contributing
 
-To contribute to the project, please read our [Plugin Development](plugin-development.md) guide and follow the established patterns and practices.
+To contribute, see [Plugin Development](plugin-development.md).
 
 ## Support
 
-For issues, questions, or support, please create an issue in the GitHub repository. 
+For issues or questions, create an issue in the GitHub repository. 

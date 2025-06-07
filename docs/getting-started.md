@@ -1,6 +1,6 @@
-# Getting Started with MCP
+# Getting Started with MCP (STDIO Edition)
 
-This guide will help you get up and running with MCP quickly.
+This guide will help you get up and running with MCP in STDIO mode.
 
 ## Prerequisites
 
@@ -30,87 +30,31 @@ This guide will help you get up and running with MCP quickly.
    pip install -r requirements.txt
    ```
 
-## Configuration
+## Running MCP (STDIO)
 
-1. Create a `.env` file in the project root:
-   ```bash
-   cp .env.example .env
-   ```
-
-2. Edit the `.env` file with your configuration:
-   ```env
-   # Server Configuration
-   MCP_HOST=localhost
-   MCP_PORT=5000
-   
-   # Plugin-specific configurations
-   BOTFATHER_API_KEY=your_api_key_here
-   ```
-
-## Running MCP
-
-1. Start the server:
-   ```bash
-   python -m mcp.main
-   ```
-
-2. The server will start on the configured host and port (default: http://localhost:5000)
-
-## Basic Usage
-
-### Checking Available Plugins
-
-To see what plugins and commands are available:
-
+Run the STDIO daemon:
 ```bash
-curl http://localhost:5000/help
+python mcp/mcp_stdio.py
 ```
 
-### Running a Command
+## Example JSON Conversation
 
-To execute a command through a plugin:
-
-```bash
-curl -X POST http://localhost:5000/run \
-  -H "Content-Type: application/json" \
-  -d '{
-    "plugin": "botfather",
-    "command": "click-button",
-    "args": {
-      "button-text": "Payments",
-      "msg-id": 12345678
-    }
-  }'
-```
-
-### Response Format
-
-Successful responses will look like:
+**Request (stdin → MCP):**
 ```json
-{
-  "status": "success",
-  "plugin": "botfather",
-  "command": "click-button",
-  "args": { ... },
-  "output": { /* JSON or text result from plugin */ },
-  "error": null
-}
+{"id": "1234", "command": "run", "payload": {"plugin": "botfather", "action": "click-button", "args": {"button-text": "Payments", "msg-id": 12345678}}}
 ```
 
-Error responses will include an error message:
+**Response (MCP → stdout):**
 ```json
-{
-  "status": "error",
-  "plugin": "botfather",
-  "command": "click-button",
-  "args": { ... },
-  "output": null,
-  "error": "Error message here"
-}
+{"id": "1234", "status": "queued", "payload": {}}
+{"id": "1234", "status": "started", "payload": {}}
+{"id": "1234", "status": "success", "payload": {"result": "Clicked button Payments on message 12345678"}}
 ```
+
+*All messages are single-line JSON, newline-delimited, and flushed immediately.*
 
 ## Next Steps
 
-- Read the [API Reference](api-reference.md) for detailed endpoint documentation
-- Check out [Plugin Development](plugin-development.md) if you want to create new plugins
-- Review [Security](security.md) best practices for production deployment 
+- Read the [API Reference](api-reference.md) for the STDIO message protocol
+- See [Plugin Development](plugin-development.md) to create new plugins
+- Review [Security](security.md) best practices 
