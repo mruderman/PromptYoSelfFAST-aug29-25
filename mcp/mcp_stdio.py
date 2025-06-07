@@ -8,7 +8,10 @@ import signal
 import time
 import subprocess
 from typing import Dict, Any
-from .logger import logger
+try:
+    from .logger import logger
+except ImportError:
+    from logger import logger
 import glob
 
 PLUGIN_ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "plugins")
@@ -105,7 +108,8 @@ class MCPStdio:
                 cmd,
                 capture_output=True,
                 text=True,
-                timeout=job.timeout
+                timeout=job.timeout,
+                stdin=subprocess.DEVNULL
             )
             try:
                 output = json.loads(proc.stdout)

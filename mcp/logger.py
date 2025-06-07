@@ -1,6 +1,9 @@
 import logging
 import sys
-from .config import Config
+try:
+    from .config import Config
+except ImportError:
+    from config import Config
 
 logger = logging.getLogger("mcp")
 logger.setLevel(logging.INFO)

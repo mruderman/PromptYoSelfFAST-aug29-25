@@ -11,18 +11,23 @@ def click_button(button_text: str, msg_id: int) -> dict:
 
 def main():
     parser = argparse.ArgumentParser(description="Mock BotFather CLI")
-    parser.add_argument("command", choices=["click-button"])
-    parser.add_argument("--button-text", required=True)
-    parser.add_argument("--msg-id", type=int, required=True)
-    
-    args = parser.parse_args()
-    
+    parser.add_argument("command", nargs="?")
+    parser.add_argument("--button-text")
+    parser.add_argument("--msg-id", type=int)
+    args, unknown = parser.parse_known_args()
+
+    def out(obj, is_error=False):
+        print(json.dumps(obj))
+
     if args.command == "click-button":
+        if not args.button_text or args.msg_id is None:
+            out({"error": "Missing required arguments"}, is_error=True)
+            sys.exit(1)
         result = click_button(args.button_text, args.msg_id)
-        print(json.dumps(result))
+        out(result)
         sys.exit(0)
     else:
-        print(json.dumps({"error": f"Unknown command: {args.command}"}))
+        out({"error": f"Unknown command: {args.command}"}, is_error=True)
         sys.exit(1)
 
 if __name__ == "__main__":
