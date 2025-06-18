@@ -3,21 +3,33 @@
 ## [Unreleased] — 2024-06-07
 
 ### Major Changes
-- **Full STDIO refactor:** MCP now operates exclusively as a STDIO daemon (no HTTP/SSE, no network ports).
-- **Protocol:** All communication is newline-delimited, single-line JSON via stdin/stdout.
+- **Pivot to SSE Architecture:** MCP now operates as a Server-Sent Events (SSE) server for Docker compatibility with Letta.
+- **aiohttp Integration:** Switched from FastAPI/uvicorn to aiohttp for consistency with Sanctum stack.
+- **Protocol:** All communication via HTTP/SSE for real-time updates and Docker-friendly operation.
 - **Plugin execution:** Plugins are run as subprocesses with robust handling (no stdin inheritance, always JSON output, timeouts enforced).
-- **Test suite:** Comprehensive new tests for all STDIO protocol features, round-trip, error, and edge cases. No HTTP/SSE tests remain.
+- **Test suite:** Comprehensive tests for all SSE protocol features, round-trip, error, and edge cases.
 - **Windows compatibility:** Fixed subprocess and import issues for Windows (stdin handling, absolute/relative imports).
-- **Documentation:** All docs updated for STDIO-only operation. Legacy HTTP/SSE API archived for reference.
-- **Security:** No network exposure; all security guidance updated for local-only operation.
+- **Documentation:** All docs updated for SSE operation. Legacy STDIO approach archived for reference.
+- **Security:** Network exposure controlled via Docker networking; all security guidance updated for container operation.
 - **Bugfixes:**
   - Plugin subprocesses no longer hang or block on stdin
   - CLI plugins always emit JSON (success or error)
-  - Daemon robust to plugin errors, timeouts, and bad JSON
+  - Server robust to plugin errors, timeouts, and bad JSON
 
 ### Minor
 - Improved logging and diagnostics for plugin execution and errors
-- Plugin development guide updated for STDIO/CLI best practices
+- Plugin development guide updated for SSE/CLI best practices
+- Stack alignment with Sanctum standards (aiohttp, pydantic, python-dotenv)
+
+---
+
+## [2.0.0-sse] - 2024-06-XX
+- MCP refactored to operate as a Server-Sent Events (SSE) server using aiohttp
+- All STDIO code removed in favor of HTTP/SSE for Docker compatibility
+- New mcp_server.py entrypoint with aiohttp architecture
+- Documentation and usage examples updated for SSE
+- Logging and plugin architecture unchanged
+- Stack aligned with Sanctum standards
 
 ---
 
