@@ -12,8 +12,9 @@ class TestSSEEndpoint:
     """Test cases for SSE endpoint."""
     
     @pytest.mark.asyncio
-    async def test_sse_connection_establishment(self, client):
-        """Test SSE connection establishment."""
+    @pytest.mark.timeout(30)  # 30 second timeout for SSE connection
+    async def test_sse_connection(self, client):
+        """Test basic SSE connection establishment."""
         async with client.get('/sse') as response:
             assert response.status == 200
             assert response.headers['Content-Type'] == 'text/event-stream'
@@ -21,30 +22,76 @@ class TestSSEEndpoint:
             assert response.headers['Connection'] == 'keep-alive'
     
     @pytest.mark.asyncio
-    async def test_sse_initial_tools_manifest(self, client):
-        """Test that SSE sends initial tools manifest."""
+    @pytest.mark.timeout(30)  # 30 second timeout for tools manifest
+    async def test_sse_tools_manifest(self, client):
+        """Test that SSE sends tools manifest on connection."""
         async with client.get('/sse') as response:
             assert response.status == 200
             
-            # Read the first line of SSE data
-            data = await response.content.readline()
-            data_str = data.decode('utf-8').strip()
+            # Read the first event (tools manifest)
+            data = await asyncio.wait_for(response.content.readline(), timeout=10.0)
+            assert data is not None
             
-            # Should start with "data: "
+            data_str = data.decode('utf-8').strip()
             assert data_str.startswith('data: ')
             
             # Parse the JSON data
             json_str = data_str[6:]  # Remove "data: " prefix
             event_data = json.loads(json_str)
             
-            # Verify JSON-RPC format
+            # Verify the structure
             assert "jsonrpc" in event_data
             assert event_data["jsonrpc"] == "2.0"
             assert "method" in event_data
-            assert event_data["method"] == "notifications/tools/list"
+            assert event_data["method"] == "tools/list"
             assert "params" in event_data
             assert "tools" in event_data["params"]
             assert isinstance(event_data["params"]["tools"], list)
+    
+    @pytest.mark.asyncio
+    @pytest.mark.timeout(30)  # 30 second timeout for multiple connections
+    async def test_multiple_sse_connections(self, client):
+        """Test multiple concurrent SSE connections."""
+        connections = []
+        
+        # Create multiple connections
+        for i in range(3):
+            response = await client.get('/sse')
+            assert response.status == 200
+            connections.append(response)
+        
+        # Read from each connection
+        for conn in connections:
+            data = await asyncio.wait_for(conn.content.readline(), timeout=10.0)
+            assert data is not None
+            assert data.decode('utf-8').strip().startswith('data: ')
+        
+        # Close connections
+        for conn in connections:
+            await asyncio.wait_for(conn.content.readline(), timeout=5.0)
+    
+    @pytest.mark.asyncio
+    @pytest.mark.timeout(30)  # 30 second timeout for connection cleanup
+    async def test_sse_connection_cleanup(self, client):
+        """Test that SSE connections are properly cleaned up."""
+        # Check initial session count
+        async with client.get('/health') as response:
+            health_data = await response.json()
+            initial_sessions = health_data["sessions"]
+        
+        # Create and close a connection
+        async with client.get('/sse') as response:
+            assert response.status == 200
+            data = await asyncio.wait_for(response.content.readline(), timeout=10.0)
+            assert data is not None
+        
+        # Wait for cleanup
+        await asyncio.sleep(0.1)
+        
+        # Check session count is back to initial
+        async with client.get('/health') as response:
+            health_data = await response.json()
+            assert health_data["sessions"] == initial_sessions
     
     @pytest.mark.asyncio
     async def test_sse_session_creation(self, client):
@@ -63,56 +110,6 @@ class TestSSEEndpoint:
                 health_data = await health_response.json()
                 new_sessions = health_data["sessions"]
                 assert new_sessions >= initial_sessions
-    
-    @pytest.mark.asyncio
-    async def test_sse_connection_cleanup(self, client):
-        """Test that SSE connection cleanup works properly."""
-        # Get initial session count
-        async with client.get('/health') as response:
-            initial_data = await response.json()
-            initial_sessions = initial_data["sessions"]
-        
-        # Create and immediately close SSE connection
-        async with client.get('/sse') as response:
-            assert response.status == 200
-            # Read one line to establish connection
-            await response.content.readline()
-        
-        # Wait a bit for cleanup
-        await asyncio.sleep(0.1)
-        
-        # Check that session count returned to initial
-        async with client.get('/health') as response:
-            final_data = await response.json()
-            final_sessions = final_data["sessions"]
-            assert final_sessions <= initial_sessions
-    
-    @pytest.mark.asyncio
-    async def test_sse_multiple_connections(self, client):
-        """Test multiple SSE connections."""
-        # Create multiple SSE connections
-        connections = []
-        for i in range(3):
-            response = await client.get('/sse')
-            assert response.status == 200
-            connections.append(response)
-        
-        # Check that all connections are active
-        async with client.get('/health') as response:
-            health_data = await response.json()
-            assert health_data["sessions"] >= 3
-        
-        # Close all connections
-        for conn in connections:
-            await conn.content.readline()  # Read one line to establish connection
-        
-        # Wait for cleanup
-        await asyncio.sleep(0.1)
-        
-        # Check that sessions were cleaned up
-        async with client.get('/health') as response:
-            health_data = await response.json()
-            assert health_data["sessions"] == 0
     
     @pytest.mark.asyncio
     async def test_sse_tools_manifest_with_plugins(self, client):

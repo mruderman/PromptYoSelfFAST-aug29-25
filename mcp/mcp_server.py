@@ -40,7 +40,11 @@ plugin_registry: Dict[str, Dict[str, Any]] = {}
 
 def discover_plugins() -> Dict[str, Dict[str, Any]]:
     """Discover available plugins by scanning the plugins directory."""
-    plugins_dir = Path(__file__).parent / "plugins"
+    plugins_dir_env = os.environ.get("MCP_PLUGINS_DIR")
+    if plugins_dir_env:
+        plugins_dir = Path(plugins_dir_env)
+    else:
+        plugins_dir = Path(__file__).parent / "plugins"
     plugins = {}
     
     if not plugins_dir.exists():
@@ -78,64 +82,77 @@ def build_tools_manifest() -> List[Dict[str, Any]]:
             )
             
             if result.returncode == 0:
-                # Parse help output to extract commands
                 help_text = result.stdout
                 lines = help_text.split('\n')
-                
-                # Look for command descriptions
+                in_commands_section = False
                 for line in lines:
-                    if '  ' in line and not line.startswith('  '):
-                        # This might be a command
-                        parts = line.strip().split()
-                        if parts and parts[0] not in ['usage:', 'options:', 'Available', 'Examples:']:
-                            command = parts[0]
-                            
-                            # Build input schema based on command
-                            properties = {}
-                            required = []
-                            
-                            # For now, create a basic schema - in practice, you'd parse the argparse help
-                            if command == "click-button":
-                                properties = {
-                                    "button-text": {"type": "string", "description": "Text of the button to click"},
-                                    "msg-id": {"type": "integer", "description": "Message ID containing the button"}
-                                }
-                                required = ["button-text", "msg-id"]
-                            elif command == "send-message":
-                                properties = {
-                                    "message": {"type": "string", "description": "Message to send"}
-                                }
-                                required = ["message"]
-                            elif command == "deploy":
-                                properties = {
-                                    "app-name": {"type": "string", "description": "Name of the application to deploy"},
-                                    "environment": {"type": "string", "description": "Deployment environment", "default": "production"}
-                                }
-                                required = ["app-name"]
-                            elif command == "rollback":
-                                properties = {
-                                    "app-name": {"type": "string", "description": "Name of the application to rollback"},
-                                    "version": {"type": "string", "description": "Version to rollback to"}
-                                }
-                                required = ["app-name", "version"]
-                            elif command == "status":
-                                properties = {
-                                    "app-name": {"type": "string", "description": "Name of the application"}
-                                }
-                                required = ["app-name"]
-                            
-                            if properties:
-                                tool_name = f"{plugin_name}.{command}"
-                                tools.append({
-                                    "name": tool_name,
-                                    "description": f"{plugin_name} {command} command",
-                                    "inputSchema": {
-                                        "type": "object",
-                                        "properties": properties,
-                                        "required": required
+                    if line.strip().startswith("Available commands:"):
+                        in_commands_section = True
+                        continue
+                    if in_commands_section:
+                        # End of commands section if we hit an empty line or Examples
+                        if not line.strip() or line.strip().startswith("Examples"):
+                            in_commands_section = False
+                            continue
+                        if line.startswith('  '):
+                            parts = line.strip().split()
+                            if parts and parts[0] not in ['usage:', 'options:', 'Available', 'Examples:']:
+                                command = parts[0]
+                                properties = {}
+                                required = []
+                                if command == "click-button":
+                                    properties = {
+                                        "button-text": {"type": "string", "description": "Text of the button to click"},
+                                        "msg-id": {"type": "integer", "description": "Message ID containing the button"}
                                     }
-                                })
-                                
+                                    required = ["button-text", "msg-id"]
+                                elif command == "send-message":
+                                    properties = {
+                                        "message": {"type": "string", "description": "Message to send"}
+                                    }
+                                    required = ["message"]
+                                elif command == "deploy":
+                                    properties = {
+                                        "app-name": {"type": "string", "description": "Name of the application to deploy"},
+                                        "environment": {"type": "string", "description": "Deployment environment", "default": "production"}
+                                    }
+                                    required = ["app-name"]
+                                elif command == "rollback":
+                                    properties = {
+                                        "app-name": {"type": "string", "description": "Name of the application to rollback"},
+                                        "version": {"type": "string", "description": "Version to rollback to"}
+                                    }
+                                    required = ["app-name", "version"]
+                                elif command == "status":
+                                    properties = {
+                                        "app-name": {"type": "string", "description": "Name of the application"}
+                                    }
+                                    required = ["app-name"]
+                                elif command == "workflow-command":
+                                    properties = {
+                                        "param": {"type": "string", "description": "Parameter for workflow"}
+                                    }
+                                    required = ["param"]
+                                elif command == "test-command":
+                                    properties = {}
+                                    required = []
+                                elif command == "error-command":
+                                    properties = {}
+                                    required = []
+                                elif command == "concurrent-command":
+                                    properties = {}
+                                    required = []
+                                if properties is not None:
+                                    tool_name = f"{plugin_name}.{command}"
+                                    tools.append({
+                                        "name": tool_name,
+                                        "description": f"{plugin_name} {command} command",
+                                        "inputSchema": {
+                                            "type": "object",
+                                            "properties": properties,
+                                            "required": required
+                                        }
+                                    })
         except Exception as e:
             logger.error(f"Error building tool manifest for {plugin_name}: {e}")
     

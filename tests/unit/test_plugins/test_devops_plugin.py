@@ -5,6 +5,8 @@ Unit tests for DevOps plugin.
 import pytest
 import importlib.util
 import sys
+import subprocess
+import json
 from pathlib import Path
 
 # Dynamically import the correct cli.py for devops
@@ -100,4 +102,30 @@ class TestDevOpsPlugin:
         args = {"app-name": "myapp", "version": long_version}
         result = rollback(args)
         assert "result" in result
-        assert f"Rolled back myapp to version {long_version}" in result["result"] 
+        assert f"Rolled back myapp to version {long_version}" in result["result"]
+
+def test_devops_cli_exposes_functions():
+    spec = importlib.util.spec_from_file_location("devops_cli", cli_path)
+    devops_cli = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(devops_cli)
+    assert hasattr(devops_cli, "deploy")
+    assert hasattr(devops_cli, "rollback")
+    assert hasattr(devops_cli, "status")
+
+def test_devops_cli_deploy_subprocess():
+    result = subprocess.run(
+        [sys.executable, str(cli_path), "deploy", "--app-name", "myapp"],
+        capture_output=True, text=True
+    )
+    assert result.returncode == 0
+    output = json.loads(result.stdout)
+    assert "result" in output
+
+def test_devops_cli_status_subprocess():
+    result = subprocess.run(
+        [sys.executable, str(cli_path), "status", "--app-name", "myapp"],
+        capture_output=True, text=True
+    )
+    assert result.returncode == 0
+    output = json.loads(result.stdout)
+    assert "result" in output 

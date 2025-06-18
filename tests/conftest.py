@@ -27,25 +27,6 @@ def event_loop():
     loop.close()
 
 
-@pytest_asyncio.fixture
-async def app():
-    """Create a test application instance."""
-    return await init_app()
-
-
-@pytest_asyncio.fixture
-async def client(app):
-    """Create a test client for the application."""
-    from aiohttp.test_utils import TestServer
-    server = TestServer(app)
-    client = TestClient(server)
-    await client.start_server()
-    try:
-        yield client
-    finally:
-        await client.close()
-
-
 @pytest.fixture
 def temp_plugins_dir():
     """Create a temporary plugins directory for testing."""
@@ -130,4 +111,46 @@ def sample_jsonrpc_response():
                 }
             ]
         }
-    } 
+    }
+
+
+@pytest.fixture
+def test_plugins_env(temp_plugins_dir):
+    os.environ["MCP_PLUGINS_DIR"] = str(temp_plugins_dir)
+    return temp_plugins_dir
+
+
+@pytest.fixture
+def temp_plugins_dir_with_plugins(request, temp_plugins_dir):
+    # Create plugins as specified by the test param
+    plugins = getattr(request, 'param', None)
+    if plugins:
+        for plugin in plugins:
+            plugin_dir = temp_plugins_dir / plugin['name']
+            plugin_dir.mkdir(parents=True, exist_ok=True)
+            cli_path = plugin_dir / "cli.py"
+            with open(cli_path, 'w') as f:
+                f.write(plugin['cli_content'])
+            os.chmod(cli_path, 0o755)
+    os.environ["MCP_PLUGINS_DIR"] = str(temp_plugins_dir)
+    return temp_plugins_dir
+
+
+@pytest_asyncio.fixture
+async def app(temp_plugins_dir_with_plugins):
+    """Create a test application instance."""
+    from mcp_server import init_app
+    return await init_app()
+
+
+@pytest_asyncio.fixture
+async def client(app):
+    """Create a test client for the application."""
+    from aiohttp.test_utils import TestServer, TestClient
+    server = TestServer(app)
+    client = TestClient(server)
+    await client.start_server()
+    try:
+        yield client
+    finally:
+        await client.close() 

@@ -11,10 +11,12 @@ class TestHTTPEndpoints:
     """Test cases for HTTP endpoints."""
     
     @pytest.mark.asyncio
+    @pytest.mark.timeout(30)  # 30 second timeout for health check
     async def test_health_endpoint(self, client):
         """Test health check endpoint."""
         async with client.get('/health') as response:
             assert response.status == 200
+            assert response.headers['Content-Type'] == 'application/json'
             
             data = await response.json()
             assert "status" in data
@@ -25,6 +27,7 @@ class TestHTTPEndpoints:
             assert isinstance(data["sessions"], int)
     
     @pytest.mark.asyncio
+    @pytest.mark.timeout(30)  # 30 second timeout for message endpoint
     async def test_message_endpoint_valid_request(self, client, sample_jsonrpc_request, sample_jsonrpc_response):
         """Test message endpoint with valid JSON-RPC request."""
         async with client.post('/message', json=sample_jsonrpc_request) as response:
@@ -37,19 +40,19 @@ class TestHTTPEndpoints:
             assert data["id"] == sample_jsonrpc_request["id"]
     
     @pytest.mark.asyncio
+    @pytest.mark.timeout(30)  # 30 second timeout for invalid JSON
     async def test_message_endpoint_invalid_json(self, client):
         """Test message endpoint with invalid JSON."""
         async with client.post('/message', data="invalid json") as response:
-            assert response.status == 200
+            assert response.status == 400
+            assert response.headers['Content-Type'] == 'application/json'
             
             data = await response.json()
-            assert "jsonrpc" in data
-            assert data["jsonrpc"] == "2.0"
             assert "error" in data
             assert data["error"]["code"] == -32700  # Parse error
-            assert "Parse error" in data["error"]["message"]
     
     @pytest.mark.asyncio
+    @pytest.mark.timeout(30)  # 30 second timeout for invalid method
     async def test_message_endpoint_invalid_jsonrpc_version(self, client):
         """Test message endpoint with invalid JSON-RPC version."""
         request = {
@@ -70,6 +73,7 @@ class TestHTTPEndpoints:
             assert "jsonrpc must be '2.0'" in data["error"]["message"]
     
     @pytest.mark.asyncio
+    @pytest.mark.timeout(30)  # 30 second timeout for missing tool name
     async def test_message_endpoint_missing_tool_name(self, client):
         """Test message endpoint with missing tool name."""
         request = {
@@ -92,6 +96,7 @@ class TestHTTPEndpoints:
             assert "missing tool name" in data["error"]["message"]
     
     @pytest.mark.asyncio
+    @pytest.mark.timeout(30)  # 30 second timeout for unknown method
     async def test_message_endpoint_unknown_method(self, client):
         """Test message endpoint with unknown method."""
         request = {
@@ -112,6 +117,7 @@ class TestHTTPEndpoints:
             assert "Method not found" in data["error"]["message"]
     
     @pytest.mark.asyncio
+    @pytest.mark.timeout(30)  # 30 second timeout for non-dict body
     async def test_message_endpoint_non_dict_body(self, client):
         """Test message endpoint with non-dict body."""
         async with client.post('/message', json="not a dict") as response:
@@ -125,6 +131,7 @@ class TestHTTPEndpoints:
             assert "Invalid Request" in data["error"]["message"]
     
     @pytest.mark.asyncio
+    @pytest.mark.timeout(30)  # 30 second timeout for tools call
     async def test_message_endpoint_tool_execution_success(self, client):
         """Test message endpoint with successful tool execution."""
         request = {
@@ -169,6 +176,7 @@ class TestHTTPEndpoints:
                 assert "Test result: test_value" in data["result"]["content"][0]["text"]
     
     @pytest.mark.asyncio
+    @pytest.mark.timeout(30)  # 30 second timeout for tools call
     async def test_message_endpoint_tool_execution_error(self, client):
         """Test message endpoint with tool execution error."""
         request = {

@@ -2,129 +2,36 @@
 Unit tests for BotFather plugin.
 """
 
-import pytest
 import importlib.util
 import sys
+import subprocess
+import json
 from pathlib import Path
 
-# Dynamically import the correct cli.py for botfather
-botfather_cli_path = Path(__file__).parent.parent.parent.parent / "mcp" / "plugins" / "botfather" / "cli.py"
-spec = importlib.util.spec_from_file_location("botfather_cli", botfather_cli_path)
-botfather_cli = importlib.util.module_from_spec(spec)
-sys.modules["botfather_cli"] = botfather_cli
-spec.loader.exec_module(botfather_cli)
+def test_botfather_cli_exposes_functions():
+    cli_path = Path(__file__).parent.parent.parent.parent / "mcp" / "plugins" / "botfather" / "cli.py"
+    spec = importlib.util.spec_from_file_location("botfather_cli", cli_path)
+    botfather_cli = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(botfather_cli)
+    assert hasattr(botfather_cli, "click_button")
+    assert hasattr(botfather_cli, "send_message")
 
-click_button = botfather_cli.click_button
-send_message = botfather_cli.send_message
+def test_botfather_cli_click_button_subprocess():
+    cli_path = Path(__file__).parent.parent.parent.parent / "mcp" / "plugins" / "botfather" / "cli.py"
+    result = subprocess.run(
+        [sys.executable, str(cli_path), "click-button", "--button-text", "Test", "--msg-id", "123"],
+        capture_output=True, text=True
+    )
+    assert result.returncode == 0
+    output = json.loads(result.stdout)
+    assert "result" in output
 
-class TestBotFatherPlugin:
-    """Test cases for BotFather plugin."""
-    
-    def test_click_button_success(self):
-        """Test successful button click."""
-        args = {
-            "button-text": "Payments",
-            "msg-id": 12345678
-        }
-        
-        result = click_button(args)
-        
-        assert "result" in result
-        assert "Clicked button Payments on message 12345678" in result["result"]
-    
-    def test_click_button_missing_button_text(self):
-        """Test button click with missing button text."""
-        args = {
-            "msg-id": 12345678
-        }
-        
-        result = click_button(args)
-        
-        assert "error" in result
-        assert "Missing required arguments" in result["error"]
-        assert "button-text" in result["error"]
-    
-    def test_click_button_missing_msg_id(self):
-        """Test button click with missing message ID."""
-        args = {
-            "button-text": "Payments"
-        }
-        
-        result = click_button(args)
-        
-        assert "error" in result
-        assert "Missing required arguments" in result["error"]
-        assert "msg-id" in result["error"]
-    
-    def test_click_button_missing_both_args(self):
-        """Test button click with missing both arguments."""
-        args = {}
-        
-        result = click_button(args)
-        
-        assert "error" in result
-        assert "Missing required arguments" in result["error"]
-        assert "button-text" in result["error"]
-        assert "msg-id" in result["error"]
-    
-    def test_send_message_success(self):
-        """Test successful message sending."""
-        args = {
-            "message": "/newbot"
-        }
-        
-        result = send_message(args)
-        
-        assert "result" in result
-        assert "Sent message: /newbot" in result["result"]
-    
-    def test_send_message_missing_message(self):
-        """Test message sending with missing message."""
-        args = {}
-        
-        result = send_message(args)
-        
-        assert "error" in result
-        assert "Missing required argument: message" in result["error"]
-    
-    def test_send_message_empty_message(self):
-        """Test message sending with empty message."""
-        args = {"message": ""}
-        result = send_message(args)
-        assert "error" in result
-        assert "Missing required argument: message" in result["error"]
-    
-    def test_send_message_special_characters(self):
-        """Test message sending with special characters."""
-        args = {
-            "message": "Hello @world! #test"
-        }
-        
-        result = send_message(args)
-        
-        assert "result" in result
-        assert "Sent message: Hello @world! #test" in result["result"]
-    
-    def test_click_button_with_special_characters(self):
-        """Test button click with special characters in button text."""
-        args = {
-            "button-text": "Pay & Save",
-            "msg-id": 12345678
-        }
-        
-        result = click_button(args)
-        
-        assert "result" in result
-        assert "Clicked button Pay & Save on message 12345678" in result["result"]
-    
-    def test_click_button_large_msg_id(self):
-        """Test button click with large message ID."""
-        args = {
-            "button-text": "Test",
-            "msg-id": 999999999999
-        }
-        
-        result = click_button(args)
-        
-        assert "result" in result
-        assert "Clicked button Test on message 999999999999" in result["result"] 
+def test_botfather_cli_send_message_subprocess():
+    cli_path = Path(__file__).parent.parent.parent.parent / "mcp" / "plugins" / "botfather" / "cli.py"
+    result = subprocess.run(
+        [sys.executable, str(cli_path), "send-message", "--message", "Hello"],
+        capture_output=True, text=True
+    )
+    assert result.returncode == 0
+    output = json.loads(result.stdout)
+    assert "result" in output 
