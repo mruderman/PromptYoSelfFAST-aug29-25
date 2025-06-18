@@ -6,6 +6,7 @@ import pytest
 import json
 import subprocess
 from unittest.mock import patch, MagicMock
+import sys
 
 from mcp_server import execute_plugin_tool
 
@@ -55,7 +56,7 @@ class TestPluginExecution:
                 # Verify subprocess was called correctly
                 mock_run.assert_called_once()
                 call_args = mock_run.call_args[0][0]
-                assert call_args[0] == "python"  # sys.executable
+                assert call_args[0] == sys.executable  # sys.executable
                 assert call_args[1] == "/path/to/plugin/cli.py"
                 assert call_args[2] == "test-command"
                 assert "--param" in call_args
@@ -218,6 +219,6 @@ class TestPluginExecution:
                 # Verify only command and subcommand were passed
                 call_args = mock_run.call_args[0][0]
                 assert len(call_args) == 3  # python, cli.py, command
-                assert call_args[0] == "python"
+                assert call_args[0] == sys.executable
                 assert call_args[1] == "/path/to/plugin/cli.py"
                 assert call_args[2] == "test-command" 

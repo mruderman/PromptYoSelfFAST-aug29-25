@@ -3,16 +3,19 @@ Unit tests for BotFather plugin.
 """
 
 import pytest
-import json
+import importlib.util
 import sys
 from pathlib import Path
-from unittest.mock import patch, MagicMock
 
-# Add the plugins directory to the path
-sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "mcp" / "plugins" / "botfather"))
+# Dynamically import the correct cli.py for botfather
+botfather_cli_path = Path(__file__).parent.parent.parent.parent / "mcp" / "plugins" / "botfather" / "cli.py"
+spec = importlib.util.spec_from_file_location("botfather_cli", botfather_cli_path)
+botfather_cli = importlib.util.module_from_spec(spec)
+sys.modules["botfather_cli"] = botfather_cli
+spec.loader.exec_module(botfather_cli)
 
-from cli import click_button, send_message
-
+click_button = botfather_cli.click_button
+send_message = botfather_cli.send_message
 
 class TestBotFatherPlugin:
     """Test cases for BotFather plugin."""
@@ -86,14 +89,10 @@ class TestBotFatherPlugin:
     
     def test_send_message_empty_message(self):
         """Test message sending with empty message."""
-        args = {
-            "message": ""
-        }
-        
+        args = {"message": ""}
         result = send_message(args)
-        
-        assert "result" in result
-        assert "Sent message: " in result["result"]
+        assert "error" in result
+        assert "Missing required argument: message" in result["error"]
     
     def test_send_message_special_characters(self):
         """Test message sending with special characters."""

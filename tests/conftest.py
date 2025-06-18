@@ -11,6 +11,7 @@ import pytest
 import aiohttp
 from aiohttp.test_utils import TestClient, TestServer
 from pathlib import Path
+import pytest_asyncio
 
 # Add the mcp directory to the path
 sys.path.insert(0, str(Path(__file__).parent.parent / "mcp"))
@@ -26,17 +27,23 @@ def event_loop():
     loop.close()
 
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def app():
     """Create a test application instance."""
     return await init_app()
 
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def client(app):
     """Create a test client for the application."""
-    async with TestClient(app) as client:
+    from aiohttp.test_utils import TestServer
+    server = TestServer(app)
+    client = TestClient(server)
+    await client.start_server()
+    try:
         yield client
+    finally:
+        await client.close()
 
 
 @pytest.fixture

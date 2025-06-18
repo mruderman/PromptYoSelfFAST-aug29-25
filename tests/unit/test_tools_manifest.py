@@ -5,6 +5,7 @@ Unit tests for tools manifest building functionality.
 import pytest
 import subprocess
 from unittest.mock import patch, MagicMock
+import sys
 
 from mcp_server import build_tools_manifest
 
@@ -14,7 +15,7 @@ class TestToolsManifest:
     
     def test_build_tools_manifest_empty_registry(self):
         """Test building tools manifest with empty plugin registry."""
-        with patch('mcp_server.plugin_registry', {}):
+        with patch.object(sys.modules['mcp_server'], 'plugin_registry', {}):
             tools = build_tools_manifest()
             
             assert isinstance(tools, list)
@@ -27,8 +28,8 @@ class TestToolsManifest:
             "commands": {}
         }
         
-        with patch('mcp_server.plugin_registry', {"test_plugin": mock_plugin_info}):
-            with patch('subprocess.run') as mock_run:
+        with patch.object(sys.modules['mcp_server'], 'plugin_registry', {"test_plugin": mock_plugin_info}):
+            with patch('mcp_server.subprocess.run') as mock_run:
                 # Mock successful help command execution
                 mock_result = MagicMock()
                 mock_result.returncode = 0
@@ -76,8 +77,8 @@ optional arguments:
             "commands": {}
         }
         
-        with patch('mcp_server.plugin_registry', {"test_plugin": mock_plugin_info}):
-            with patch('subprocess.run') as mock_run:
+        with patch.object(sys.modules['mcp_server'], 'plugin_registry', {"test_plugin": mock_plugin_info}):
+            with patch('mcp_server.subprocess.run') as mock_run:
                 # Mock failed help command execution
                 mock_result = MagicMock()
                 mock_result.returncode = 1
@@ -96,8 +97,8 @@ optional arguments:
             "commands": {}
         }
         
-        with patch('mcp_server.plugin_registry', {"test_plugin": mock_plugin_info}):
-            with patch('subprocess.run') as mock_run:
+        with patch.object(sys.modules['mcp_server'], 'plugin_registry', {"test_plugin": mock_plugin_info}):
+            with patch('mcp_server.subprocess.run') as mock_run:
                 # Mock timeout exception
                 mock_run.side_effect = subprocess.TimeoutExpired("cli.py", 10)
                 
@@ -119,8 +120,8 @@ optional arguments:
             }
         }
         
-        with patch('mcp_server.plugin_registry', mock_plugins):
-            with patch('subprocess.run') as mock_run:
+        with patch.object(sys.modules['mcp_server'], 'plugin_registry', mock_plugins):
+            with patch('mcp_server.subprocess.run') as mock_run:
                 # Mock successful help command execution for both plugins
                 mock_result = MagicMock()
                 mock_result.returncode = 0
@@ -157,8 +158,8 @@ positional arguments:
             "commands": {}
         }
         
-        with patch('mcp_server.plugin_registry', {"test_plugin": mock_plugin_info}):
-            with patch('subprocess.run') as mock_run:
+        with patch.object(sys.modules['mcp_server'], 'plugin_registry', {"test_plugin": mock_plugin_info}):
+            with patch('mcp_server.subprocess.run') as mock_run:
                 # Mock help output that includes all command types
                 mock_result = MagicMock()
                 mock_result.returncode = 0
