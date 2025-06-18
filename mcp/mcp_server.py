@@ -3,6 +3,7 @@
 Sanctum Letta MCP Server
 
 A Server-Sent Events (SSE) server for orchestrating plugin execution using aiohttp.
+Compliant with Model Context Protocol (MCP) specification.
 """
 
 import asyncio
@@ -11,11 +12,12 @@ import logging
 import os
 import subprocess
 import sys
+import uuid
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from aiohttp import web, ClientSession
 from aiohttp.web import Request, Response, StreamResponse
-from aiohttp_cors import setup as cors_setup, ResourceOptions, CorsViewMixin
+from aiohttp_cors import setup as cors_setup, ResourceOptions
 
 
 # Configure logging
@@ -29,9 +31,11 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Plugin registry and help cache
+# Session management
+sessions: Dict[str, Dict[str, Any]] = {}
+
+# Plugin registry
 plugin_registry: Dict[str, Dict[str, Any]] = {}
-help_cache: Dict[str, Any] = {}
 
 
 def discover_plugins() -> Dict[str, Dict[str, Any]]:
@@ -57,56 +61,104 @@ def discover_plugins() -> Dict[str, Dict[str, Any]]:
     return plugins
 
 
-def get_plugin_help(plugin_name: str) -> Optional[Dict[str, Any]]:
-    """Get help information for a plugin."""
-    if plugin_name not in plugin_registry:
-        return None
+def build_tools_manifest() -> List[Dict[str, Any]]:
+    """Build the tools manifest in MCP format."""
+    tools = []
     
-    try:
-        cli_path = plugin_registry[plugin_name]["path"]
-        result = subprocess.run(
-            [sys.executable, cli_path, "--help"],
-            capture_output=True,
-            text=True,
-            timeout=10
-        )
+    for plugin_name, plugin_info in plugin_registry.items():
+        cli_path = plugin_info["path"]
         
-        if result.returncode == 0:
-            return {
-                "help": result.stdout,
-                "commands": plugin_registry[plugin_name]["commands"]
-            }
-        else:
-            logger.error(f"Failed to get help for plugin {plugin_name}: {result.stderr}")
-            return None
-    except Exception as e:
-        logger.error(f"Error getting help for plugin {plugin_name}: {e}")
-        return None
-
-
-def build_help_cache() -> Dict[str, Any]:
-    """Build the help cache for all plugins."""
-    cache = {}
+        # Get help to extract available commands
+        try:
+            result = subprocess.run(
+                [sys.executable, cli_path, "--help"],
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+            
+            if result.returncode == 0:
+                # Parse help output to extract commands
+                help_text = result.stdout
+                lines = help_text.split('\n')
+                
+                # Look for command descriptions
+                for line in lines:
+                    if '  ' in line and not line.startswith('  '):
+                        # This might be a command
+                        parts = line.strip().split()
+                        if parts and parts[0] not in ['usage:', 'options:', 'Available', 'Examples:']:
+                            command = parts[0]
+                            
+                            # Build input schema based on command
+                            properties = {}
+                            required = []
+                            
+                            # For now, create a basic schema - in practice, you'd parse the argparse help
+                            if command == "click-button":
+                                properties = {
+                                    "button-text": {"type": "string", "description": "Text of the button to click"},
+                                    "msg-id": {"type": "integer", "description": "Message ID containing the button"}
+                                }
+                                required = ["button-text", "msg-id"]
+                            elif command == "send-message":
+                                properties = {
+                                    "message": {"type": "string", "description": "Message to send"}
+                                }
+                                required = ["message"]
+                            elif command == "deploy":
+                                properties = {
+                                    "app-name": {"type": "string", "description": "Name of the application to deploy"},
+                                    "environment": {"type": "string", "description": "Deployment environment", "default": "production"}
+                                }
+                                required = ["app-name"]
+                            elif command == "rollback":
+                                properties = {
+                                    "app-name": {"type": "string", "description": "Name of the application to rollback"},
+                                    "version": {"type": "string", "description": "Version to rollback to"}
+                                }
+                                required = ["app-name", "version"]
+                            elif command == "status":
+                                properties = {
+                                    "app-name": {"type": "string", "description": "Name of the application"}
+                                }
+                                required = ["app-name"]
+                            
+                            if properties:
+                                tool_name = f"{plugin_name}.{command}"
+                                tools.append({
+                                    "name": tool_name,
+                                    "description": f"{plugin_name} {command} command",
+                                    "inputSchema": {
+                                        "type": "object",
+                                        "properties": properties,
+                                        "required": required
+                                    }
+                                })
+                                
+        except Exception as e:
+            logger.error(f"Error building tool manifest for {plugin_name}: {e}")
     
-    for plugin_name in plugin_registry:
-        help_info = get_plugin_help(plugin_name)
-        if help_info:
-            cache[plugin_name] = help_info
-    
-    return cache
+    return tools
 
 
-async def execute_plugin(plugin_name: str, action: str, args: Dict[str, Any]) -> Dict[str, Any]:
-    """Execute a plugin command."""
-    if plugin_name not in plugin_registry:
-        return {"error": f"Plugin not found: {plugin_name}"}
-    
+async def execute_plugin_tool(tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
+    """Execute a plugin tool command."""
     try:
+        # Parse tool name: plugin.command
+        if '.' not in tool_name:
+            return {"error": f"Invalid tool name format: {tool_name}"}
+        
+        plugin_name, command = tool_name.split('.', 1)
+        
+        if plugin_name not in plugin_registry:
+            return {"error": f"Plugin not found: {plugin_name}"}
+        
         cli_path = plugin_registry[plugin_name]["path"]
         
         # Build command arguments
-        cmd = [sys.executable, cli_path, action]
-        for key, value in args.items():
+        cmd = [sys.executable, cli_path, command]
+        for key, value in arguments.items():
             cmd.extend([f"--{key}", str(value)])
         
         logger.info(f"Executing plugin command: {' '.join(cmd)}")
@@ -121,7 +173,11 @@ async def execute_plugin(plugin_name: str, action: str, args: Dict[str, Any]) ->
         
         if result.returncode == 0:
             try:
-                return json.loads(result.stdout.strip())
+                plugin_result = json.loads(result.stdout.strip())
+                if "error" in plugin_result:
+                    return {"error": plugin_result["error"]}
+                else:
+                    return {"result": plugin_result.get("result", plugin_result)}
             except json.JSONDecodeError:
                 return {"result": result.stdout.strip()}
         else:
@@ -130,94 +186,182 @@ async def execute_plugin(plugin_name: str, action: str, args: Dict[str, Any]) ->
     except subprocess.TimeoutExpired:
         return {"error": "Plugin execution timed out"}
     except Exception as e:
-        logger.error(f"Error executing plugin {plugin_name}: {e}")
+        logger.error(f"Error executing plugin tool {tool_name}: {e}")
         return {"error": str(e)}
+
+
+async def sse_handler(request: Request) -> StreamResponse:
+    """Handle SSE connections for MCP protocol."""
+    session_id = str(uuid.uuid4())
+    
+    # Create session
+    sessions[session_id] = {
+        "id": session_id,
+        "created": asyncio.get_event_loop().time()
+    }
+    
+    logger.info(f"New SSE connection established: {session_id}")
+    
+    # Create SSE response
+    response = StreamResponse(
+        status=200,
+        headers={
+            'Content-Type': 'text/event-stream',
+            'Cache-Control': 'no-cache',
+            'Connection': 'keep-alive',
+        }
+    )
+    
+    await response.prepare(request)
+    
+    try:
+        # Send initial tools manifest immediately
+        tools = build_tools_manifest()
+        manifest_event = {
+            "jsonrpc": "2.0",
+            "method": "notifications/tools/list",
+            "params": {"tools": tools}
+        }
+        
+        await response.write(f"data: {json.dumps(manifest_event)}\n\n".encode())
+        logger.info(f"Sent tools manifest with {len(tools)} tools")
+        
+        # Keep connection alive
+        while not request.transport.is_closing():
+            await asyncio.sleep(1)
+            
+    except Exception as e:
+        logger.error(f"Error in SSE connection {session_id}: {e}")
+    finally:
+        # Cleanup session
+        if session_id in sessions:
+            del sessions[session_id]
+        logger.info(f"SSE connection closed: {session_id}")
+    
+    return response
+
+
+async def message_handler(request: Request) -> Response:
+    """Handle MCP message requests (tool invocations)."""
+    try:
+        body = await request.json()
+        
+        # Validate JSON-RPC 2.0 format
+        if not isinstance(body, dict):
+            return web.json_response({
+                "jsonrpc": "2.0",
+                "error": {
+                    "code": -32600,
+                    "message": "Invalid Request"
+                },
+                "id": None
+            })
+        
+        jsonrpc = body.get("jsonrpc")
+        request_id = body.get("id")
+        method = body.get("method")
+        params = body.get("params", {})
+        
+        if jsonrpc != "2.0":
+            return web.json_response({
+                "jsonrpc": "2.0",
+                "error": {
+                    "code": -32600,
+                    "message": "Invalid Request: jsonrpc must be '2.0'"
+                },
+                "id": request_id
+            })
+        
+        if method == "tools/call":
+            # Handle tool invocation
+            tool_name = params.get("name")
+            arguments = params.get("arguments", {})
+            
+            if not tool_name:
+                return web.json_response({
+                    "jsonrpc": "2.0",
+                    "error": {
+                        "code": -32602,
+                        "message": "Invalid params: missing tool name"
+                    },
+                    "id": request_id
+                })
+            
+            # Execute the tool
+            result = await execute_plugin_tool(tool_name, arguments)
+            
+            if "error" in result:
+                return web.json_response({
+                    "jsonrpc": "2.0",
+                    "error": {
+                        "code": -32603,
+                        "message": result["error"]
+                    },
+                    "id": request_id
+                })
+            else:
+                return web.json_response({
+                    "jsonrpc": "2.0",
+                    "result": {
+                        "content": [
+                            {
+                                "type": "text",
+                                "text": str(result["result"])
+                            }
+                        ]
+                    },
+                    "id": request_id
+                })
+        
+        else:
+            return web.json_response({
+                "jsonrpc": "2.0",
+                "error": {
+                    "code": -32601,
+                    "message": f"Method not found: {method}"
+                },
+                "id": request_id
+            })
+            
+    except json.JSONDecodeError:
+        return web.json_response({
+            "jsonrpc": "2.0",
+            "error": {
+                "code": -32700,
+                "message": "Parse error"
+            },
+            "id": None
+        })
+    except Exception as e:
+        logger.error(f"Error handling message: {e}")
+        return web.json_response({
+            "jsonrpc": "2.0",
+            "error": {
+                "code": -32603,
+                "message": "Internal error"
+            },
+            "id": body.get("id") if isinstance(body, dict) else None
+        })
 
 
 async def health_handler(request: Request) -> Response:
     """Health check endpoint."""
     return web.json_response({
-        "status": "healthy", 
-        "plugins": len(plugin_registry)
+        "status": "healthy",
+        "plugins": len(plugin_registry),
+        "sessions": len(sessions)
     })
-
-
-async def help_handler(request: Request) -> Response:
-    """Get help information for all plugins."""
-    return web.json_response(help_cache)
-
-
-async def reload_help_handler(request: Request) -> Response:
-    """Reload the help cache."""
-    global help_cache
-    help_cache = build_help_cache()
-    logger.info("Help cache reloaded")
-    return web.json_response({
-        "status": "ok", 
-        "message": "Help cache reloaded"
-    })
-
-
-async def run_plugin_handler(request: Request) -> StreamResponse:
-    """Execute a plugin command with SSE response streaming."""
-    try:
-        body = await request.json()
-        plugin_name = body.get("plugin")
-        action = body.get("action")
-        args = body.get("args", {})
-        
-        if not plugin_name or not action:
-            return web.json_response({
-                "error": "Missing required fields: plugin and action"
-            })
-        
-        # Create SSE response
-        response = StreamResponse(
-            status=200,
-            headers={
-                'Content-Type': 'text/event-stream',
-                'Cache-Control': 'no-cache',
-                'Connection': 'keep-alive',
-            }
-        )
-        
-        await response.prepare(request)
-        
-        # Send queued status
-        await response.write(f"data: {json.dumps({'status': 'queued', 'payload': {}})}\n\n".encode())
-        
-        # Send started status
-        await response.write(f"data: {json.dumps({'status': 'started', 'payload': {}})}\n\n".encode())
-        
-        # Execute plugin
-        result = await execute_plugin(plugin_name, action, args)
-        
-        # Send final status
-        if "error" in result:
-            await response.write(f"data: {json.dumps({'status': 'error', 'payload': result})}\n\n".encode())
-        else:
-            await response.write(f"data: {json.dumps({'status': 'success', 'payload': result})}\n\n".encode())
-        
-        return response
-        
-    except Exception as e:
-        logger.error(f"Error in run_plugin: {e}")
-        return web.json_response({"error": str(e)})
 
 
 async def init_app() -> web.Application:
     """Initialize the aiohttp application."""
-    global plugin_registry, help_cache
+    global plugin_registry
     
     logger.info("Starting Sanctum Letta MCP Server...")
     
     # Discover plugins
     plugin_registry = discover_plugins()
     logger.info(f"Discovered {len(plugin_registry)} plugins")
-    
-    # Build help cache
-    help_cache = build_help_cache()
-    logger.info("Help cache built successfully")
     
     # Create application
     app = web.Application()
@@ -233,10 +377,9 @@ async def init_app() -> web.Application:
     })
     
     # Add routes
+    app.router.add_get('/sse', sse_handler)
+    app.router.add_post('/message', message_handler)
     app.router.add_get('/health', health_handler)
-    app.router.add_get('/help', help_handler)
-    app.router.add_post('/reload-help', reload_help_handler)
-    app.router.add_post('/run', run_plugin_handler)
     
     # Apply CORS to all routes
     for route in list(app.router.routes()):

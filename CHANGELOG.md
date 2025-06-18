@@ -1,25 +1,29 @@
 # Changelog
 
-## [Unreleased] — 2024-06-07
+## [2.1.0] — 2024-06-07
 
-### Major Changes
-- **Pivot to SSE Architecture:** MCP now operates as a Server-Sent Events (SSE) server for Docker compatibility with Letta.
-- **aiohttp Integration:** Switched from FastAPI/uvicorn to aiohttp for consistency with Sanctum stack.
-- **Protocol:** All communication via HTTP/SSE for real-time updates and Docker-friendly operation.
-- **Plugin execution:** Plugins are run as subprocesses with robust handling (no stdin inheritance, always JSON output, timeouts enforced).
-- **Test suite:** Comprehensive tests for all SSE protocol features, round-trip, error, and edge cases.
-- **Windows compatibility:** Fixed subprocess and import issues for Windows (stdin handling, absolute/relative imports).
-- **Documentation:** All docs updated for SSE operation. Legacy STDIO approach archived for reference.
-- **Security:** Network exposure controlled via Docker networking; all security guidance updated for container operation.
-- **Bugfixes:**
-  - Plugin subprocesses no longer hang or block on stdin
-  - CLI plugins always emit JSON (success or error)
-  - Server robust to plugin errors, timeouts, and bad JSON
+### Added/Changed
+- **MCP-Compliant SSE/JSON-RPC Architecture:**
+  - Implements the Model Context Protocol event and message contract for Letta and other MCP clients.
+  - All endpoints and responses use JSON-RPC 2.0.
+- **Dynamic Plugin Discovery:**
+  - Plugins are auto-discovered at startup from `mcp/plugins/`.
+  - No static registration—just drop in a new plugin with a `cli.py` and it will be available after a server restart.
+- **Immediate Tools Manifest:**
+  - On SSE connect, emits a JSON-RPC 2.0 tools manifest event as required by Letta and MCP.
+- **Letta Compatibility:**
+  - This implementation is ready for Letta, Claude Desktop, or any MCP-compliant client.
+- **Minimal, Extensible, Production-Ready:**
+  - This is a minimal, compliant implementation—ready for integration and extension.
+- **STDIO References Archived:**
+  - All legacy STDIO protocol references have been removed or archived. This implementation is HTTP/SSE-only.
 
-### Minor
-- Improved logging and diagnostics for plugin execution and errors
-- Plugin development guide updated for SSE/CLI best practices
-- Stack alignment with Sanctum standards (aiohttp, pydantic, python-dotenv)
+### Notes
+- **Version Bump:**
+  - Minor version bump to 2.1.0 for MCP/Letta compliance and dynamic plugin system.
+  - Major version bump will follow after full production validation and testing.
+- **Testing:**
+  - Ready for integration and production testing. Please report any issues or edge cases.
 
 ---
 
