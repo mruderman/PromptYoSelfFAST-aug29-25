@@ -238,15 +238,15 @@ async def sse_handler(request: Request) -> StreamResponse:
     await response.prepare(request)
     
     try:
-        # Send initial connection message in JSON-RPC 2.0 format
+        # Send initial connection message (simple format, not JSON-RPC)
         connection_event = {
-            "jsonrpc": "2.0",
-            "method": "notifications/connection_established",
-            "params": {
-                "session_id": session_id
-            }
+            "type": "connection_established",
+            "session_id": session_id
         }
-        await response.write(f"data: {json.dumps(connection_event)}\n\n".encode())
+        raw_message = f"data: {json.dumps(connection_event)}\n\n"
+        logger.info(f"RAW SSE connection message: {json.dumps(connection_event)}")
+        logger.info(f"RAW SSE wire format: {repr(raw_message)}")
+        await response.write(raw_message.encode())
         logger.info(f"Sent connection established for session {session_id}")
         
         # Keep connection alive
