@@ -68,11 +68,13 @@ def discover_plugins() -> Dict[str, Dict[str, Any]]:
 def build_tools_manifest() -> List[Dict[str, Any]]:
     """Build the tools manifest in MCP format."""
     tools = []
+    logger.info(f"Building tools manifest from {len(plugin_registry)} plugins")
     
     for plugin_name, plugin_info in plugin_registry.items():
         cli_path = plugin_info["path"]
         
         # Get help to extract available commands
+        logger.info(f"Getting help for plugin {plugin_name} from {cli_path}")
         try:
             result = subprocess.run(
                 [sys.executable, cli_path, "--help"],
@@ -83,6 +85,7 @@ def build_tools_manifest() -> List[Dict[str, Any]]:
             
             if result.returncode == 0:
                 help_text = result.stdout
+                logger.info(f"Plugin {plugin_name} help output: {help_text[:200]}...")
                 lines = help_text.split('\n')
                 in_commands_section = False
                 for line in lines:
@@ -153,6 +156,7 @@ def build_tools_manifest() -> List[Dict[str, Any]]:
                                             "required": required
                                         }
                                     })
+                                    logger.info(f"Added tool: {tool_name}")
         except Exception as e:
             logger.error(f"Error building tool manifest for {plugin_name}: {e}")
     
@@ -245,7 +249,9 @@ async def sse_handler(request: Request) -> StreamResponse:
         await response.write(f"data: {json.dumps(connection_event)}\n\n".encode())
         
         # Send tools manifest automatically
+        logger.info(f"Building tools manifest for session {session_id}")
         tools = build_tools_manifest()
+        logger.info(f"Built {len(tools)} tools for session {session_id}")
         tools_event = {
             "jsonrpc": "2.0",
             "method": "notifications/tools/list",
@@ -254,6 +260,7 @@ async def sse_handler(request: Request) -> StreamResponse:
             }
         }
         await response.write(f"data: {json.dumps(tools_event)}\n\n".encode())
+        logger.info(f"Sent tools manifest for session {session_id}")
         
         # Keep connection alive
         while True:
