@@ -238,29 +238,13 @@ async def sse_handler(request: Request) -> StreamResponse:
     await response.prepare(request)
     
     try:
-        # Send initial connection message in JSON-RPC format
+        # Send initial connection message
         connection_event = {
-            "jsonrpc": "2.0",
-            "method": "notifications/connection_established",
-            "params": {
-                "session_id": session_id
-            }
+            "type": "connection_established",
+            "session_id": session_id
         }
         await response.write(f"data: {json.dumps(connection_event)}\n\n".encode())
-        
-        # Send tools manifest automatically
-        logger.info(f"Building tools manifest for session {session_id}")
-        tools = build_tools_manifest()
-        logger.info(f"Built {len(tools)} tools for session {session_id}")
-        tools_event = {
-            "jsonrpc": "2.0",
-            "method": "notifications/tools/list",
-            "params": {
-                "tools": tools
-            }
-        }
-        await response.write(f"data: {json.dumps(tools_event)}\n\n".encode())
-        logger.info(f"Sent tools manifest for session {session_id}")
+        logger.info(f"Sent connection established for session {session_id}")
         
         # Keep connection alive
         while True:
