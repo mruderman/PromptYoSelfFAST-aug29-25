@@ -46,7 +46,7 @@ class TestSSEEndpoint:
     @pytest.mark.asyncio
     @pytest.mark.timeout(10)  # 10 second timeout for tools manifest
     async def test_sse_tools_manifest(self, client):
-        """Test that SSE sends tools manifest on connection."""
+        """Test that SSE sends connection message on connection."""
         async with client.get('/mcp/sse') as response:
             assert response.status == 200
             
@@ -83,9 +83,7 @@ class TestSSEEndpoint:
             assert data is not None
             assert data.decode('utf-8').strip().startswith('data: ')
         
-        # Close connections
-        for conn in connections:
-            await conn.close()
+        # Let connections go out of scope (they'll be closed automatically)
     
     @pytest.mark.asyncio
     @pytest.mark.timeout(15)  # 15 second timeout for connection cleanup
@@ -132,7 +130,7 @@ class TestSSEEndpoint:
     @pytest.mark.asyncio
     @pytest.mark.timeout(10)  # 10 second timeout for tools manifest with plugins
     async def test_sse_tools_manifest_with_plugins(self, client):
-        """Test SSE tools manifest when plugins are available."""
+        """Test SSE connection message when plugins are available."""
         # Mock plugin registry with plugins
         with pytest.MonkeyPatch().context() as m:
             m.setattr('mcp.mcp_server.plugin_registry', {

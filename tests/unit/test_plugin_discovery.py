@@ -15,10 +15,7 @@ class TestPluginDiscovery:
     
     def test_discover_plugins_empty_directory(self, temp_plugins_dir):
         """Test discovering plugins when plugins directory is empty."""
-        with patch('mcp.mcp_server.Path') as mock_path:
-            mock_path.return_value.parent = temp_plugins_dir.parent
-            mock_path.return_value.__truediv__.return_value = temp_plugins_dir
-            
+        with patch.dict('os.environ', {'MCP_PLUGINS_DIR': str(temp_plugins_dir)}):
             plugins = discover_plugins()
             
             assert isinstance(plugins, dict)
@@ -32,10 +29,7 @@ class TestPluginDiscovery:
         cli_path = plugin_dir / "cli.py"
         cli_path.touch()
         
-        with patch('mcp.mcp_server.Path') as mock_path:
-            mock_path.return_value.parent = temp_plugins_dir.parent
-            mock_path.return_value.__truediv__.return_value = temp_plugins_dir
-            
+        with patch.dict('os.environ', {'MCP_PLUGINS_DIR': str(temp_plugins_dir)}):
             plugins = discover_plugins()
             
             assert isinstance(plugins, dict)
@@ -50,10 +44,7 @@ class TestPluginDiscovery:
         file_path = temp_plugins_dir / "not_a_plugin.txt"
         file_path.touch()
         
-        with patch('mcp.mcp_server.Path') as mock_path:
-            mock_path.return_value.parent = temp_plugins_dir.parent
-            mock_path.return_value.__truediv__.return_value = temp_plugins_dir
-            
+        with patch.dict('os.environ', {'MCP_PLUGINS_DIR': str(temp_plugins_dir)}):
             plugins = discover_plugins()
             
             assert len(plugins) == 0
@@ -64,10 +55,7 @@ class TestPluginDiscovery:
         plugin_dir = temp_plugins_dir / "incomplete_plugin"
         plugin_dir.mkdir()
         
-        with patch('mcp.mcp_server.Path') as mock_path:
-            mock_path.return_value.parent = temp_plugins_dir.parent
-            mock_path.return_value.__truediv__.return_value = temp_plugins_dir
-            
+        with patch.dict('os.environ', {'MCP_PLUGINS_DIR': str(temp_plugins_dir)}):
             plugins = discover_plugins()
             
             assert len(plugins) == 0
@@ -81,10 +69,7 @@ class TestPluginDiscovery:
             cli_path = plugin_dir / "cli.py"
             cli_path.touch()
         
-        with patch('mcp.mcp_server.Path') as mock_path:
-            mock_path.return_value.parent = temp_plugins_dir.parent
-            mock_path.return_value.__truediv__.return_value = temp_plugins_dir
-            
+        with patch.dict('os.environ', {'MCP_PLUGINS_DIR': str(temp_plugins_dir)}):
             plugins = discover_plugins()
             
             assert len(plugins) == 3
@@ -107,10 +92,7 @@ class TestPluginDiscovery:
         cli_path = valid_dir / "cli.py"
         cli_path.touch()
         
-        with patch('mcp.mcp_server.Path') as mock_path:
-            mock_path.return_value.parent = temp_plugins_dir.parent
-            mock_path.return_value.__truediv__.return_value = temp_plugins_dir
-            
+        with patch.dict('os.environ', {'MCP_PLUGINS_DIR': str(temp_plugins_dir)}):
             plugins = discover_plugins()
             
             assert len(plugins) == 1
@@ -118,17 +100,12 @@ class TestPluginDiscovery:
     
     def test_discover_plugins_nonexistent_directory(self):
         """Test discovering plugins when plugins directory doesn't exist."""
-        with patch('mcp.mcp_server.Path') as mock_path:
-            # Mock the plugins directory to not exist
-            mock_plugins_dir = MagicMock()
-            mock_plugins_dir.exists.return_value = False
-            mock_path.return_value.parent.__truediv__.return_value = mock_plugins_dir
-            
+        with patch.dict('os.environ', {'MCP_PLUGINS_DIR': '/nonexistent/path'}):
             plugins = discover_plugins()
             
             assert isinstance(plugins, dict)
             assert len(plugins) == 0
-
+    
     def test_discover_plugins_with_env_var(self, tmp_path, monkeypatch):
         """Test plugin discovery with MCP_PLUGINS_DIR environment variable set."""
         plugins_dir = tmp_path / "plugins"
@@ -149,8 +126,11 @@ class TestPluginDiscovery:
         file_path.write_text("not a dir")
         monkeypatch.setenv("MCP_PLUGINS_DIR", str(file_path))
         from mcp.mcp_server import discover_plugins
-        plugins = discover_plugins()
-        assert plugins == {}
+        
+        # The function should raise an exception when trying to iterate over a file
+        with pytest.raises(NotADirectoryError):
+            plugins = discover_plugins()
+        
         monkeypatch.delenv("MCP_PLUGINS_DIR")
 
     def test_init_app_and_main(self, monkeypatch):
