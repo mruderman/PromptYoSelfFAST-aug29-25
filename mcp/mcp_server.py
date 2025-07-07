@@ -269,8 +269,12 @@ async def sse_handler(request: Request) -> StreamResponse:
 
 async def message_handler(request: Request) -> Response:
     """Handle MCP message requests (tool invocations)."""
+    logger.info(f"Message endpoint called with method: {request.method}")
+    logger.info(f"Message endpoint headers: {dict(request.headers)}")
+    
     try:
         body = await request.json()
+        logger.info(f"Message endpoint received body: {json.dumps(body, indent=2)}")
         
         # Validate JSON-RPC 2.0 format
         if not isinstance(body, dict):
@@ -317,7 +321,9 @@ async def message_handler(request: Request) -> Response:
         
         elif method == "tools/list":
             # Handle tools list request
+            logger.info(f"Tools list request received for session {request_id}")
             tools = build_tools_manifest()
+            logger.info(f"Returning {len(tools)} tools")
             return web.json_response({
                 "jsonrpc": "2.0",
                 "id": request_id,
