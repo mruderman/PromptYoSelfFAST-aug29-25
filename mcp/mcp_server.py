@@ -234,14 +234,32 @@ async def sse_handler(request: Request) -> StreamResponse:
     await response.prepare(request)
     
     try:
-        # Send initial connection message
+        # Send initial connection message in JSON-RPC format
         connection_event = {
-            "type": "connection_established"
+            "jsonrpc": "2.0",
+            "method": "notifications/connection_established",
+            "params": {
+                "session_id": session_id
+            }
         }
         await response.write(f"data: {json.dumps(connection_event)}\n\n".encode())
         
+        # Send tools manifest automatically
+        tools = build_tools_manifest()
+        tools_event = {
+            "jsonrpc": "2.0",
+            "method": "notifications/tools/list",
+            "params": {
+                "tools": tools
+            }
+        }
+        await response.write(f"data: {json.dumps(tools_event)}\n\n".encode())
+        
         # Keep connection alive
-        while not request.transport.is_closing():
+        while True:
+            transport = request.transport
+            if transport is None or transport.is_closing():
+                break
             await asyncio.sleep(1)
             
     except Exception as e:
