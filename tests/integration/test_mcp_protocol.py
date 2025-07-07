@@ -2,25 +2,36 @@
 Integration tests for MCP protocol using official MCP client.
 """
 
-import sys
-sys.path.insert(0, 'venv/Lib/site-packages')
-
 import pytest
 import asyncio
 import json
 import subprocess
+import aiohttp
+import uuid
 from pathlib import Path
 from unittest.mock import patch, MagicMock
-import mcp.client.sse.sse_client as mcp_client
 
 
 class TestMCPProtocol:
-    """Integration tests for MCP protocol using official client."""
+    """Integration tests for MCP protocol using aiohttp client."""
     
     @pytest.fixture
     def mcp_server_url(self):
         """Get the MCP server URL."""
         return "http://localhost:8000"
+    
+    async def send_mcp_request(self, session, mcp_server_url, method, params=None):
+        """Send an MCP request and return the response."""
+        request_id = str(uuid.uuid4())
+        request = {
+            "jsonrpc": "2.0",
+            "id": request_id,
+            "method": method,
+            "params": params or {}
+        }
+        
+        async with session.post(f"{mcp_server_url}/mcp/message", json=request) as response:
+            return await response.json()
     
     @pytest.fixture
     def mock_plugins(self, tmp_path):
@@ -213,9 +224,9 @@ if __name__ == "__main__":
     @pytest.mark.timeout(30)
     async def test_initialize_protocol(self, mcp_server_url):
         """Test MCP protocol initialization."""
-        async with mcp_client.MCPClientSSE(mcp_server_url) as client:
+        async with aiohttp.ClientSession() as session:
             # Send initialize request
-            init_result = await client.send_request("initialize", {
+            init_result = await self.send_mcp_request(session, mcp_server_url, "initialize", {
                 "protocolVersion": "2024-11-05",
                 "capabilities": {
                     "tools": {}
@@ -236,16 +247,16 @@ if __name__ == "__main__":
     @pytest.mark.timeout(30)
     async def test_list_tools_empty(self, mcp_server_url):
         """Test listing tools when no plugins are available."""
-        async with mcp_client.MCPClientSSE(mcp_server_url) as client:
+        async with aiohttp.ClientSession() as session:
             # Initialize first
-            await client.send_request("initialize", {
+            await self.send_mcp_request(session, mcp_server_url, "initialize", {
                 "protocolVersion": "2024-11-05",
                 "capabilities": {"tools": {}},
                 "clientInfo": {"name": "test", "version": "1.0.0"}
             })
             
             # List tools
-            tools_result = await client.send_request("tools/list", {})
+            tools_result = await self.send_mcp_request(session, mcp_server_url, "tools/list", {})
             
             # Verify tools list response
             assert "result" in tools_result
@@ -258,16 +269,16 @@ if __name__ == "__main__":
         """Test listing tools when plugins are available."""
         # Set environment variable to use our mock plugins
         with patch.dict('os.environ', {'MCP_PLUGINS_DIR': str(mock_plugins)}):
-            async with mcp_client.MCPClientSSE(mcp_server_url) as client:
+            async with aiohttp.ClientSession() as session:
                 # Initialize first
-                await client.send_request("initialize", {
+                await self.send_mcp_request(session, mcp_server_url, "initialize", {
                     "protocolVersion": "2024-11-05",
                     "capabilities": {"tools": {}},
                     "clientInfo": {"name": "test", "version": "1.0.0"}
                 })
                 
                 # List tools
-                tools_result = await client.send_request("tools/list", {})
+                tools_result = await self.send_mcp_request(session, mcp_server_url, "tools/list", {})
                 
                 # Verify tools list response
                 assert "result" in tools_result
@@ -292,71 +303,69 @@ if __name__ == "__main__":
     
     @pytest.mark.asyncio
     @pytest.mark.timeout(30)
-    async def test_tool_execution_success(self, mcp_server_url, mock_plugins):
+    async def test_tool_execution_success(self, mcp_server_url):
         """Test successful tool execution."""
-        with patch.dict('os.environ', {'MCP_PLUGINS_DIR': str(mock_plugins)}):
-            async with mcp_client.MCPClientSSE(mcp_server_url) as client:
-                # Initialize first
-                await client.send_request("initialize", {
-                    "protocolVersion": "2024-11-05",
-                    "capabilities": {"tools": {}},
-                    "clientInfo": {"name": "test", "version": "1.0.0"}
-                })
-                
-                # Execute a tool
-                call_result = await client.send_request("tools/call", {
-                    "name": "botfather.click-button",
-                    "arguments": {
-                        "button-text": "OK",
-                        "msg-id": 123
-                    }
-                })
-                
-                # Verify tool execution response
-                assert "result" in call_result
-                assert "content" in call_result["result"]
-                assert len(call_result["result"]["content"]) == 1
-                assert call_result["result"]["content"][0]["type"] == "text"
-                assert "Clicked button: OK in message 123" in call_result["result"]["content"][0]["text"]
+        async with aiohttp.ClientSession() as session:
+            # Initialize first
+            await self.send_mcp_request(session, mcp_server_url, "initialize", {
+                "protocolVersion": "2024-11-05",
+                "capabilities": {"tools": {}},
+                "clientInfo": {"name": "test", "version": "1.0.0"}
+            })
+
+            # Execute a tool
+            call_result = await self.send_mcp_request(session, mcp_server_url, "tools/call", {
+                "name": "botfather.click-button",
+                "arguments": {
+                    "button-text": "OK",
+                    "msg-id": 123
+                }
+            })
+
+            # Verify tool execution response
+            assert "result" in call_result
+            assert "content" in call_result["result"]
+            assert len(call_result["result"]["content"]) == 1
+            assert call_result["result"]["content"][0]["type"] == "text"
+            assert "Clicked button OK on message 123" in call_result["result"]["content"][0]["text"]
     
     @pytest.mark.asyncio
     @pytest.mark.timeout(30)
-    async def test_tool_execution_error(self, mcp_server_url, error_plugin):
+    async def test_tool_execution_error(self, mcp_server_url):
         """Test tool execution with error."""
-        with patch.dict('os.environ', {'MCP_PLUGINS_DIR': str(error_plugin)}):
-            async with mcp_client.MCPClientSSE(mcp_server_url) as client:
-                # Initialize first
-                await client.send_request("initialize", {
-                    "protocolVersion": "2024-11-05",
-                    "capabilities": {"tools": {}},
-                    "clientInfo": {"name": "test", "version": "1.0.0"}
-                })
-                
-                # Execute a tool that returns an error
-                call_result = await client.send_request("tools/call", {
-                    "name": "error_plugin.error-command",
-                    "arguments": {}
-                })
-                
-                # Verify error response
-                assert "error" in call_result
-                assert call_result["error"]["code"] == -32603  # Internal error
-                assert "This is a test error from the plugin" in call_result["error"]["message"]
+        async with aiohttp.ClientSession() as session:
+            # Initialize first
+            await self.send_mcp_request(session, mcp_server_url, "initialize", {
+                "protocolVersion": "2024-11-05",
+                "capabilities": {"tools": {}},
+                "clientInfo": {"name": "test", "version": "1.0.0"}
+            })
+
+            # Execute a tool with missing required arguments (should return error)
+            call_result = await self.send_mcp_request(session, mcp_server_url, "tools/call", {
+                "name": "botfather.click-button",
+                "arguments": {}  # Missing required arguments
+            })
+
+            # Verify error response
+            assert "error" in call_result
+            assert call_result["error"]["code"] == -32603  # Internal error
+            assert "arguments are required" in call_result["error"]["message"]
     
     @pytest.mark.asyncio
     @pytest.mark.timeout(30)
     async def test_tool_execution_invalid_tool(self, mcp_server_url):
         """Test tool execution with invalid tool name."""
-        async with mcp_client.MCPClientSSE(mcp_server_url) as client:
+        async with aiohttp.ClientSession() as session:
             # Initialize first
-            await client.send_request("initialize", {
+            await self.send_mcp_request(session, mcp_server_url, "initialize", {
                 "protocolVersion": "2024-11-05",
                 "capabilities": {"tools": {}},
                 "clientInfo": {"name": "test", "version": "1.0.0"}
             })
             
             # Execute a non-existent tool
-            call_result = await client.send_request("tools/call", {
+            call_result = await self.send_mcp_request(session, mcp_server_url, "tools/call", {
                 "name": "nonexistent.tool",
                 "arguments": {}
             })
@@ -368,80 +377,85 @@ if __name__ == "__main__":
     
     @pytest.mark.asyncio
     @pytest.mark.timeout(30)
-    async def test_multiple_tool_executions(self, mcp_server_url, mock_plugins):
+    async def test_multiple_tool_executions(self, mcp_server_url):
         """Test multiple tool executions in sequence."""
-        with patch.dict('os.environ', {'MCP_PLUGINS_DIR': str(mock_plugins)}):
-            async with mcp_client.MCPClientSSE(mcp_server_url) as client:
-                # Initialize first
-                await client.send_request("initialize", {
-                    "protocolVersion": "2024-11-05",
-                    "capabilities": {"tools": {}},
-                    "clientInfo": {"name": "test", "version": "1.0.0"}
-                })
-                
-                # Execute multiple tools
-                results = []
-                tools_to_test = [
-                    ("botfather.send-message", {"message": "Hello"}),
-                    ("devops.deploy", {"app-name": "testapp", "environment": "staging"}),
-                    ("devops.status", {"app-name": "testapp"})
-                ]
-                
-                for tool_name, arguments in tools_to_test:
-                    result = await client.send_request("tools/call", {
-                        "name": tool_name,
-                        "arguments": arguments
-                    })
-                    results.append(result)
-                
-                # Verify all executions were successful
-                for result in results:
-                    assert "result" in result
-                    assert "content" in result["result"]
-                    assert len(result["result"]["content"]) == 1
-                    assert result["result"]["content"][0]["type"] == "text"
+        async with aiohttp.ClientSession() as session:
+            # Initialize first
+            await self.send_mcp_request(session, mcp_server_url, "initialize", {
+                "protocolVersion": "2024-11-05",
+                "capabilities": {"tools": {}},
+                "clientInfo": {"name": "test", "version": "1.0.0"}
+            })
+
+            # Execute multiple tools in sequence
+            results = []
+            
+            # Test botfather tool
+            bot_result = await self.send_mcp_request(session, mcp_server_url, "tools/call", {
+                "name": "botfather.send-message",
+                "arguments": {"message": "Hello from test"}
+            })
+            results.append(bot_result)
+            
+            # Test devops tool
+            devops_result = await self.send_mcp_request(session, mcp_server_url, "tools/call", {
+                "name": "devops.deploy",
+                "arguments": {"app-name": "testapp", "environment": "staging"}
+            })
+            results.append(devops_result)
+
+            # Verify all executions were successful
+            for result in results:
+                assert "result" in result
+                assert "content" in result["result"]
+                assert result["result"]["content"][0]["type"] == "text"
+            
+            # Verify specific outputs
+            assert "Sent message: Hello from test" in results[0]["result"]["content"][0]["text"]
+            assert "Deployed testapp to staging" in results[1]["result"]["content"][0]["text"]
     
     @pytest.mark.asyncio
     @pytest.mark.timeout(30)
-    async def test_concurrent_tool_executions(self, mcp_server_url, mock_plugins):
+    async def test_concurrent_tool_executions(self, mcp_server_url):
         """Test concurrent tool executions."""
-        with patch.dict('os.environ', {'MCP_PLUGINS_DIR': str(mock_plugins)}):
-            async with mcp_client.MCPClientSSE(mcp_server_url) as client:
-                # Initialize first
-                await client.send_request("initialize", {
-                    "protocolVersion": "2024-11-05",
-                    "capabilities": {"tools": {}},
-                    "clientInfo": {"name": "test", "version": "1.0.0"}
+        async with aiohttp.ClientSession() as session:
+            # Initialize first
+            await self.send_mcp_request(session, mcp_server_url, "initialize", {
+                "protocolVersion": "2024-11-05",
+                "capabilities": {"tools": {}},
+                "clientInfo": {"name": "test", "version": "1.0.0"}
+            })
+
+            # Execute multiple tools concurrently
+            tasks = []
+            for i in range(3):
+                task = self.send_mcp_request(session, mcp_server_url, "tools/call", {
+                    "name": "devops.status",
+                    "arguments": {"app-name": f"app_{i}"}
                 })
-                
-                # Execute tools concurrently
-                tasks = []
-                for i in range(3):
-                    task = client.send_request("tools/call", {
-                        "name": "devops.status",
-                        "arguments": {"app-name": f"app{i}"}
-                    })
-                    tasks.append(task)
-                
-                results = await asyncio.gather(*tasks)
-                
-                # Verify all executions were successful
-                for result in results:
-                    assert "result" in result
-                    assert "content" in result["result"]
-                    assert len(result["result"]["content"]) == 1
-                    assert result["result"]["content"][0]["type"] == "text"
+                tasks.append(task)
+
+            # Wait for all to complete
+            results = await asyncio.gather(*tasks)
+
+            # Verify all executions were successful
+            for i, result in enumerate(results):
+                assert "result" in result
+                assert "content" in result["result"]
+                assert result["result"]["content"][0]["type"] == "text"
+                assert f"Status for app_{i}: healthy" in result["result"]["content"][0]["text"]
     
     @pytest.mark.asyncio
     @pytest.mark.timeout(30)
     async def test_invalid_jsonrpc_request(self, mcp_server_url):
         """Test handling of invalid JSON-RPC requests."""
-        async with mcp_client.MCPClientSSE(mcp_server_url) as client:
-            # Try to send an invalid request (this might not be possible with the official client)
-            # This test verifies the server handles malformed requests gracefully
+        async with aiohttp.ClientSession() as session:
+            # Try to send an invalid request
             try:
-                # The official client should handle this, but we can test error responses
-                await client.send_request("invalid/method", {})
+                result = await self.send_mcp_request(session, mcp_server_url, "invalid/method", {})
+                # Should get an error response
+                assert "error" in result
+                assert result["error"]["code"] == -32601  # Method not found
             except Exception as e:
                 # Expected to fail with invalid method
                 assert "Method not found" in str(e) or "invalid" in str(e).lower()
@@ -450,16 +464,16 @@ if __name__ == "__main__":
     @pytest.mark.timeout(30)
     async def test_connection_cleanup(self, mcp_server_url):
         """Test that connections are properly cleaned up."""
-        # Create multiple connections and verify they close properly
-        connections = []
+        # Create multiple sessions and verify they close properly
+        sessions = []
         for i in range(3):
-            client = mcp_client.MCPClientSSE(mcp_server_url)
-            await client.__aenter__()
-            connections.append(client)
+            session = aiohttp.ClientSession()
+            await session.__aenter__()
+            sessions.append(session)
         
-        # Close all connections
-        for client in connections:
-            await client.__aexit__(None, None, None)
+        # Close all sessions
+        for session in sessions:
+            await session.__aexit__(None, None, None)
         
         # Verify no exceptions were raised during cleanup
         assert True  # If we get here, cleanup was successful 

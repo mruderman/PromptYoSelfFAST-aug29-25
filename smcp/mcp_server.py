@@ -18,7 +18,7 @@ from typing import Dict, Any, Optional, List
 from aiohttp import web, ClientSession
 from aiohttp.web import Request, Response, StreamResponse
 from aiohttp_cors import setup as cors_setup, ResourceOptions
-import smcp
+# Local imports for plugin functionality
 
 
 # Configure logging
@@ -479,27 +479,8 @@ def main():
 
 
 def register_all_tools():
-    global plugin_registry
-    plugin_registry = discover_plugins()
-    tools = build_tools_manifest()
-    for tool in tools:
-        tool_name = tool["name"]
-        input_schema = tool["inputSchema"]
-        description = tool["description"]
-        # Dynamically create a function for each tool
-        def make_tool(tool_name):
-            async def tool_func(**kwargs):
-                result = await execute_plugin_tool(tool_name, kwargs)
-                if "error" in result:
-                    raise Exception(result["error"])
-                return result["result"]
-            return tool_func
-        func = make_tool(tool_name)
-        func.__name__ = tool_name.replace('.', '_')
-        func.__doc__ = description
-        smcp.tool(name=tool_name, input_schema=input_schema, description=description)(func)
+    pass  # No longer needed; tool registration is handled via manifest and handlers
 
 
 if __name__ == "__main__":
-    register_all_tools()
-    smcp.run(transport="sse", port=8000) 
+    main() 
