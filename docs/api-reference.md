@@ -1,6 +1,6 @@
 # API Reference
 
-This document provides a detailed reference for the Model Context Protocol (MCP) API, including HTTP endpoints, plugin interfaces, and key data structures.
+This document provides a detailed reference for the Sanctum Letta MCP SSE API, including HTTP endpoints, SSE communication, and plugin interfaces.
 
 ## HTTP Endpoints
 
@@ -15,50 +15,75 @@ This document provides a detailed reference for the Model Context Protocol (MCP)
   }
   ```
 
-### `/tools/manifest`
+### `/sse`
 - **Method:** GET
-- **Description:** Returns the current tools manifest, listing all available plugin commands.
-- **Response:**
-  ```json
-  {
-    "tools": [
-      { "name": "botfather.echo", "description": "Echo a message" },
-      ...
-    ]
-  }
+- **Description:** Server-Sent Events endpoint for real-time communication.
+- **Headers:** `Accept: text/event-stream`
+- **On Connect:** Emits tools manifest as JSON-RPC 2.0 notification
+- **Example Response:**
+  ```
+  data: {"jsonrpc":"2.0","method":"notifications/tools/list","params":{"tools":[...]}}
   ```
 
-### `/rpc`
+### `/message`
 - **Method:** POST
 - **Description:** JSON-RPC 2.0 endpoint for invoking plugin tools.
+- **Content-Type:** `application/json`
 - **Request:**
   ```json
   {
     "jsonrpc": "2.0",
-    "method": "botfather.echo",
-    "params": { "message": "Hello" },
-    "id": 1
+    "id": "req-1",
+    "method": "tools/call",
+    "params": {
+      "name": "botfather.click-button",
+      "arguments": {
+        "button-text": "Payments",
+        "msg-id": 12345678
+      }
+    }
   }
   ```
 - **Response:**
   ```json
   {
     "jsonrpc": "2.0",
-    "result": "Hello",
-    "id": 1
+    "id": "req-1",
+    "result": {
+      "content": [
+        {
+          "type": "text",
+          "text": "Clicked button Payments on message 12345678"
+        }
+      ]
+    }
   }
   ```
 
-### `/sse`
-- **Method:** GET
-- **Description:** Server-Sent Events endpoint for real-time updates.
+## Available Tools
+
+### BotFather Plugin
+- **botfather.click-button** - Click a button in a BotFather message
+  - Arguments: `button-text` (string), `msg-id` (integer)
+- **botfather.send-message** - Send a message to BotFather
+  - Arguments: `message` (string)
+
+### DevOps Plugin
+- **devops.deploy** - Deploy an application
+  - Arguments: `app-name` (string), `environment` (string, optional)
+- **devops.rollback** - Rollback an application deployment
+  - Arguments: `app-name` (string), `version` (string)
+- **devops.status** - Get deployment status
+  - Arguments: `app-name` (string)
 
 ## Plugin Interface
-- Plugins must provide a CLI with subcommands and help text.
-- Each command must have a name, description, and argument specification.
+- Plugins must provide a CLI with subcommands and help text
+- Each command must have a name, description, and argument specification
+- Help output must include an "Available commands:" section
 
 ## Key Data Structures
-- **Tool Manifest:** List of available tools with metadata.
-- **Session:** Represents a client connection and context.
+- **Tool Manifest:** List of available tools with metadata
+- **Session:** Represents a client SSE connection and context
+- **JSON-RPC 2.0:** All requests and responses follow JSON-RPC 2.0 format
 
 For more details, see the [Plugin Development](plugin-development.md) guide. 
