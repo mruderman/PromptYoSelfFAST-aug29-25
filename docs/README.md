@@ -34,5 +34,8 @@ The Sanctum Letta MCP is a production-ready, SSE-based server that provides:
 - [Changelog](../CHANGELOG.md)
 - [Main README](../README.md)
 
+## Docker Deployment
+This MCP server is designed to work with self-hosted Letta/Sanctum servers running in Docker containers. See the [Getting Started](getting-started.md) guide for Docker networking configuration.
+
 ---
 For any questions or contributions, please refer to the [Security](security.md) and [Plugin Development](plugin-development.md) guides. 

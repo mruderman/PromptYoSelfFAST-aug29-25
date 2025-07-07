@@ -86,4 +86,10 @@ This document provides a detailed reference for the Sanctum Letta MCP SSE API, i
 - **Session:** Represents a client SSE connection and context
 - **JSON-RPC 2.0:** All requests and responses follow JSON-RPC 2.0 format
 
+## Docker Configuration
+When using with self-hosted Letta/Sanctum in Docker:
+- Replace `localhost` with your host machine's IP address
+- Use `http://192.168.1.XXX:8000` instead of `http://localhost:8000`
+- See [Getting Started](getting-started.md) for detailed Docker networking setup
+
 For more details, see the [Plugin Development](plugin-development.md) guide. 

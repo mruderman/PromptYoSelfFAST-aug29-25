@@ -63,6 +63,19 @@ curl -X POST http://localhost:8000/message \
   -d '{"jsonrpc":"2.0","id":"test","method":"tools/call","params":{"name":"botfather.send-message","arguments":{"message":"/help"}}}'
 ```
 
+### Docker Environment Debugging
+If running in Docker environment, replace `localhost` with your host IP:
+
+```bash
+# Find your host IP first
+ipconfig  # Windows
+ip addr show  # Linux/Mac
+
+# Then use your actual IP
+curl http://192.168.1.XXX:8000/health
+curl -H "Accept: text/event-stream" http://192.168.1.XXX:8000/sse
+```
+
 ## References
 - [API Reference](api-reference.md)
 - [Security Guide](security.md) 
