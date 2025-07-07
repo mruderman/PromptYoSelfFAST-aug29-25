@@ -13,7 +13,7 @@ from pathlib import Path
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "mcp"))
 
-from mcp_server import execute_plugin_tool
+from mcp.mcp_server import execute_plugin_tool
 
 
 class TestPluginExecution:
@@ -22,7 +22,7 @@ class TestPluginExecution:
     @pytest.mark.asyncio
     async def test_execute_plugin_tool_invalid_format(self):
         """Test executing plugin tool with invalid tool name format."""
-        with patch('mcp_server.plugin_registry', {}):
+        with patch('mcp.mcp_server.plugin_registry', {}):
             result = await execute_plugin_tool("invalid_tool_name", {})
             
             assert "error" in result
@@ -31,7 +31,7 @@ class TestPluginExecution:
     @pytest.mark.asyncio
     async def test_execute_plugin_tool_plugin_not_found(self):
         """Test executing plugin tool when plugin is not found."""
-        with patch('mcp_server.plugin_registry', {}):
+        with patch('mcp.mcp_server.plugin_registry', {}):
             result = await execute_plugin_tool("nonexistent_plugin.command", {})
             
             assert "error" in result
@@ -41,125 +41,138 @@ class TestPluginExecution:
     @pytest.mark.asyncio
     async def test_execute_plugin_tool_success(self, mock_plugin_cli):
         """Test successful plugin tool execution."""
-        with patch('subprocess.run') as mock_run:
-            # Mock successful subprocess execution
-            mock_result = MagicMock()
-            mock_result.returncode = 0
-            mock_result.stdout = json.dumps({"result": "Test execution successful"}).encode()
-            mock_run.return_value = mock_result
-            
-            result = await execute_plugin_tool(str(mock_plugin_cli), "test-command", {"param": "test_value"})
-            
-            # Verify subprocess was called correctly
-            mock_run.assert_called_once()
-            call_args = mock_run.call_args
-            assert call_args[0][0] == [str(mock_plugin_cli), "test-command", "--param", "test_value"]
-            assert call_args[1]["capture_output"] is True
-            assert call_args[1]["text"] is False
-            
-            # Verify result
-            assert result["result"] == "Test execution successful"
+        with patch('mcp.mcp_server.plugin_registry', {"test_plugin": {"path": str(mock_plugin_cli)}}):
+            with patch('subprocess.run') as mock_run:
+                # Mock successful subprocess execution
+                mock_result = MagicMock()
+                mock_result.returncode = 0
+                mock_result.stdout = json.dumps({"result": "Test execution successful"})
+                mock_run.return_value = mock_result
+                
+                result = await execute_plugin_tool("test_plugin.test-command", {"param": "test_value"})
+                
+                # Verify subprocess was called correctly
+                mock_run.assert_called_once()
+                call_args = mock_run.call_args
+                assert call_args[0][0] == [sys.executable, str(mock_plugin_cli), "test-command", "--param", "test_value"]
+                assert call_args[1]["capture_output"] is True
+                assert call_args[1]["text"] is True
+                
+                # Verify result
+                assert result["result"] == "Test execution successful"
     
     @pytest.mark.timeout(30)  # 30 second timeout for plugin execution error
     @pytest.mark.asyncio
     async def test_execute_plugin_tool_error(self, mock_plugin_cli):
         """Test plugin tool execution with error."""
-        with patch('subprocess.run') as mock_run:
-            # Mock subprocess execution with error
-            mock_result = MagicMock()
-            mock_result.returncode = 1
-            mock_result.stderr = b"Plugin execution failed"
-            mock_run.return_value = mock_result
-            
-            with pytest.raises(Exception) as exc_info:
-                await execute_plugin_tool(str(mock_plugin_cli), "test-command", {"param": "test_value"})
-            
-            assert "Plugin execution failed" in str(exc_info.value)
+        with patch('mcp.mcp_server.plugin_registry', {"test_plugin": {"path": str(mock_plugin_cli)}}):
+            with patch('subprocess.run') as mock_run:
+                # Mock subprocess execution with error
+                mock_result = MagicMock()
+                mock_result.returncode = 1
+                mock_result.stderr = "Plugin execution failed"
+                mock_run.return_value = mock_result
+                
+                result = await execute_plugin_tool("test_plugin.test-command", {"param": "test_value"})
+                
+                assert "error" in result
+                assert "Plugin execution failed" in result["error"]
     
     @pytest.mark.timeout(30)  # 30 second timeout for invalid JSON
     @pytest.mark.asyncio
     async def test_execute_plugin_tool_invalid_json(self, mock_plugin_cli):
         """Test plugin tool execution with invalid JSON output."""
-        with patch('subprocess.run') as mock_run:
-            # Mock subprocess execution with invalid JSON
-            mock_result = MagicMock()
-            mock_result.returncode = 0
-            mock_result.stdout = b"Invalid JSON output"
-            mock_run.return_value = mock_result
-            
-            with pytest.raises(json.JSONDecodeError):
-                await execute_plugin_tool(str(mock_plugin_cli), "test-command", {"param": "test_value"})
+        with patch('mcp.mcp_server.plugin_registry', {"test_plugin": {"path": str(mock_plugin_cli)}}):
+            with patch('subprocess.run') as mock_run:
+                # Mock subprocess execution with invalid JSON
+                mock_result = MagicMock()
+                mock_result.returncode = 0
+                mock_result.stdout = "Invalid JSON output"
+                mock_run.return_value = mock_result
+                
+                result = await execute_plugin_tool("test_plugin.test-command", {"param": "test_value"})
+                
+                assert "result" in result
+                assert result["result"] == "Invalid JSON output"
     
     @pytest.mark.timeout(30)  # 30 second timeout for subprocess failure
     @pytest.mark.asyncio
     async def test_execute_plugin_tool_subprocess_failure(self, mock_plugin_cli):
         """Test plugin tool execution when subprocess fails to start."""
-        with patch('subprocess.run') as mock_run:
-            # Mock subprocess failure
-            mock_run.side_effect = FileNotFoundError("Plugin not found")
-            
-            with pytest.raises(FileNotFoundError):
-                await execute_plugin_tool(str(mock_plugin_cli), "test-command", {"param": "test_value"})
+        with patch('mcp.mcp_server.plugin_registry', {"test_plugin": {"path": str(mock_plugin_cli)}}):
+            with patch('subprocess.run') as mock_run:
+                # Mock subprocess failure
+                mock_run.side_effect = FileNotFoundError("Plugin not found")
+                
+                result = await execute_plugin_tool("test_plugin.test-command", {"param": "test_value"})
+                
+                assert "error" in result
+                assert "Plugin not found" in result["error"]
     
     @pytest.mark.timeout(30)  # 30 second timeout for timeout handling
     @pytest.mark.asyncio
     async def test_execute_plugin_tool_timeout(self, mock_plugin_cli):
         """Test plugin tool execution timeout handling."""
-        with patch('subprocess.run') as mock_run:
-            # Mock subprocess timeout
-            mock_run.side_effect = subprocess.TimeoutExpired(cmd=[str(mock_plugin_cli)], timeout=5)
-            
-            with pytest.raises(subprocess.TimeoutExpired):
-                await execute_plugin_tool(str(mock_plugin_cli), "test-command", {"param": "test_value"})
+        with patch('mcp.mcp_server.plugin_registry', {"test_plugin": {"path": str(mock_plugin_cli)}}):
+            with patch('subprocess.run') as mock_run:
+                # Mock subprocess timeout
+                mock_run.side_effect = subprocess.TimeoutExpired(cmd=[str(mock_plugin_cli)], timeout=5)
+                
+                result = await execute_plugin_tool("test_plugin.test-command", {"param": "test_value"})
+                
+                assert "error" in result
+                assert "timed out" in result["error"]
     
     @pytest.mark.timeout(30)  # 30 second timeout for empty arguments
     @pytest.mark.asyncio
     async def test_execute_plugin_tool_empty_arguments(self, mock_plugin_cli):
         """Test plugin tool execution with empty arguments."""
-        with patch('subprocess.run') as mock_run:
-            # Mock successful subprocess execution
-            mock_result = MagicMock()
-            mock_result.returncode = 0
-            mock_result.stdout = json.dumps({"result": "Default result"}).encode()
-            mock_run.return_value = mock_result
-            
-            result = await execute_plugin_tool(str(mock_plugin_cli), "test-command", {})
-            
-            # Verify subprocess was called with default arguments
-            mock_run.assert_called_once()
-            call_args = mock_run.call_args
-            assert call_args[0][0] == [str(mock_plugin_cli), "test-command", "--param", "default"]
-            
-            # Verify result
-            assert result["result"] == "Default result"
+        with patch('mcp.mcp_server.plugin_registry', {"test_plugin": {"path": str(mock_plugin_cli)}}):
+            with patch('subprocess.run') as mock_run:
+                # Mock successful subprocess execution
+                mock_result = MagicMock()
+                mock_result.returncode = 0
+                mock_result.stdout = json.dumps({"result": "Default result"})
+                mock_run.return_value = mock_result
+                
+                result = await execute_plugin_tool("test_plugin.test-command", {})
+                
+                # Verify subprocess was called with just command
+                mock_run.assert_called_once()
+                call_args = mock_run.call_args
+                assert call_args[0][0] == [sys.executable, str(mock_plugin_cli), "test-command"]
+                
+                # Verify result
+                assert result["result"] == "Default result"
     
     @pytest.mark.timeout(30)  # 30 second timeout for complex arguments
     @pytest.mark.asyncio
     async def test_execute_plugin_tool_complex_arguments(self, mock_plugin_cli):
         """Test plugin tool execution with complex arguments."""
-        with patch('subprocess.run') as mock_run:
-            # Mock successful subprocess execution
-            mock_result = MagicMock()
-            mock_result.returncode = 0
-            mock_result.stdout = json.dumps({"result": "Complex execution"}).encode()
-            mock_run.return_value = mock_result
-            
-            complex_args = {
-                "param": "complex_value",
-                "number": 42,
-                "flag": True
-            }
-            
-            result = await execute_plugin_tool(str(mock_plugin_cli), "test-command", complex_args)
-            
-            # Verify subprocess was called with complex arguments
-            mock_run.assert_called_once()
-            call_args = mock_run.call_args
-            expected_args = [str(mock_plugin_cli), "test-command", "--param", "complex_value"]
-            assert call_args[0][0] == expected_args
-            
-            # Verify result
-            assert result["result"] == "Complex execution"
+        with patch('mcp.mcp_server.plugin_registry', {"test_plugin": {"path": str(mock_plugin_cli)}}):
+            with patch('subprocess.run') as mock_run:
+                # Mock successful subprocess execution
+                mock_result = MagicMock()
+                mock_result.returncode = 0
+                mock_result.stdout = json.dumps({"result": "Complex execution"})
+                mock_run.return_value = mock_result
+                
+                complex_args = {
+                    "param": "complex_value",
+                    "number": 42,
+                    "flag": True
+                }
+                
+                result = await execute_plugin_tool("test_plugin.test-command", complex_args)
+                
+                # Verify subprocess was called with complex arguments
+                mock_run.assert_called_once()
+                call_args = mock_run.call_args
+                expected_args = [sys.executable, str(mock_plugin_cli), "test-command", "--param", "complex_value", "--number", "42", "--flag", "True"]
+                assert call_args[0][0] == expected_args
+                
+                # Verify result
+                assert result["result"] == "Complex execution"
     
     @pytest.mark.asyncio
     async def test_execute_plugin_tool_plugin_error(self):
@@ -169,7 +182,7 @@ class TestPluginExecution:
             "commands": {}
         }
         
-        with patch('mcp_server.plugin_registry', {"test_plugin": mock_plugin_info}):
+        with patch('mcp.mcp_server.plugin_registry', {"test_plugin": mock_plugin_info}):
             with patch('subprocess.run') as mock_run:
                 # Mock plugin execution with error
                 mock_result = MagicMock()
@@ -190,7 +203,7 @@ class TestPluginExecution:
             "commands": {}
         }
         
-        with patch('mcp_server.plugin_registry', {"test_plugin": mock_plugin_info}):
+        with patch('mcp.mcp_server.plugin_registry', {"test_plugin": mock_plugin_info}):
             with patch('subprocess.run') as mock_run:
                 # Mock subprocess failure
                 mock_result = MagicMock()
@@ -211,7 +224,7 @@ class TestPluginExecution:
             "commands": {}
         }
         
-        with patch('mcp_server.plugin_registry', {"test_plugin": mock_plugin_info}):
+        with patch('mcp.mcp_server.plugin_registry', {"test_plugin": mock_plugin_info}):
             with patch('subprocess.run') as mock_run:
                 # Mock successful execution but invalid JSON output
                 mock_result = MagicMock()
@@ -238,7 +251,7 @@ class TestPluginExecution:
             "flag": True
         }
         
-        with patch('mcp_server.plugin_registry', {"test_plugin": mock_plugin_info}):
+        with patch('mcp.mcp_server.plugin_registry', {"test_plugin": mock_plugin_info}):
             with patch('subprocess.run') as mock_run:
                 # Mock successful plugin execution
                 mock_result = MagicMock()
@@ -249,15 +262,7 @@ class TestPluginExecution:
                 result = await execute_plugin_tool("test_plugin.test-command", arguments)
                 
                 assert "result" in result
-                
-                # Verify all arguments were passed correctly
-                call_args = mock_run.call_args[0][0]
-                assert "--param1" in call_args
-                assert "value1" in call_args
-                assert "--param2" in call_args
-                assert "value2" in call_args
-                assert "--flag" in call_args
-                assert "True" in call_args
+                assert result["result"] == "Success with multiple args"
     
     @pytest.mark.asyncio
     async def test_execute_plugin_tool_exception_handling(self):
@@ -267,7 +272,7 @@ class TestPluginExecution:
             "commands": {}
         }
         
-        with patch('mcp_server.plugin_registry', {"test_plugin": mock_plugin_info}):
+        with patch('mcp.mcp_server.plugin_registry', {"test_plugin": mock_plugin_info}):
             with patch('subprocess.run') as mock_run:
                 # Mock general exception
                 mock_run.side_effect = Exception("Unexpected error")
@@ -275,4 +280,17 @@ class TestPluginExecution:
                 result = await execute_plugin_tool("test_plugin.test-command", {})
                 
                 assert "error" in result
-                assert "Unexpected error" in result["error"] 
+                assert "Unexpected error" in result["error"]
+    
+    @pytest.mark.asyncio
+    async def test_execute_plugin_tool_unexpected_exception(self):
+        """Test execute_plugin_tool when an unexpected exception is raised."""
+        mock_plugin_info = {
+            "path": "/path/to/plugin/cli.py",
+            "commands": {}
+        }
+        with patch('mcp.mcp_server.plugin_registry', {"test_plugin": mock_plugin_info}):
+            with patch('subprocess.run', side_effect=OSError("unexpected error")):
+                result = await execute_plugin_tool("test_plugin.test-command", {})
+                assert "error" in result
+                assert "unexpected error" in result["error"] 

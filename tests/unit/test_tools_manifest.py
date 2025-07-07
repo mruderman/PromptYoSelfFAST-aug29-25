@@ -7,7 +7,7 @@ import subprocess
 from unittest.mock import patch, MagicMock
 import sys
 
-from mcp_server import build_tools_manifest
+from mcp.mcp_server import build_tools_manifest
 
 
 class TestToolsManifest:
@@ -15,7 +15,7 @@ class TestToolsManifest:
     
     def test_build_tools_manifest_empty_registry(self):
         """Test building tools manifest with empty plugin registry."""
-        with patch.object(sys.modules['mcp_server'], 'plugin_registry', {}):
+        with patch.object(sys.modules['mcp.mcp_server'], 'plugin_registry', {}):
             tools = build_tools_manifest()
             
             assert isinstance(tools, list)
@@ -28,8 +28,8 @@ class TestToolsManifest:
             "commands": {}
         }
         
-        with patch.object(sys.modules['mcp_server'], 'plugin_registry', {"test_plugin": mock_plugin_info}):
-            with patch('mcp_server.subprocess.run') as mock_run:
+        with patch.object(sys.modules['mcp.mcp_server'], 'plugin_registry', {"test_plugin": mock_plugin_info}):
+            with patch('mcp.mcp_server.subprocess.run') as mock_run:
                 # Mock successful help command execution
                 mock_result = MagicMock()
                 mock_result.returncode = 0
@@ -77,8 +77,8 @@ optional arguments:
             "commands": {}
         }
         
-        with patch.object(sys.modules['mcp_server'], 'plugin_registry', {"test_plugin": mock_plugin_info}):
-            with patch('mcp_server.subprocess.run') as mock_run:
+        with patch.object(sys.modules['mcp.mcp_server'], 'plugin_registry', {"test_plugin": mock_plugin_info}):
+            with patch('mcp.mcp_server.subprocess.run') as mock_run:
                 # Mock failed help command execution
                 mock_result = MagicMock()
                 mock_result.returncode = 1
@@ -97,8 +97,8 @@ optional arguments:
             "commands": {}
         }
         
-        with patch.object(sys.modules['mcp_server'], 'plugin_registry', {"test_plugin": mock_plugin_info}):
-            with patch('mcp_server.subprocess.run') as mock_run:
+        with patch.object(sys.modules['mcp.mcp_server'], 'plugin_registry', {"test_plugin": mock_plugin_info}):
+            with patch('mcp.mcp_server.subprocess.run') as mock_run:
                 # Mock timeout exception
                 mock_run.side_effect = subprocess.TimeoutExpired("cli.py", 10)
                 
@@ -120,8 +120,8 @@ optional arguments:
             }
         }
         
-        with patch.object(sys.modules['mcp_server'], 'plugin_registry', mock_plugins):
-            with patch('mcp_server.subprocess.run') as mock_run:
+        with patch.object(sys.modules['mcp.mcp_server'], 'plugin_registry', mock_plugins):
+            with patch('mcp.mcp_server.subprocess.run') as mock_run:
                 # Mock successful help command execution for both plugins
                 mock_result = MagicMock()
                 mock_result.returncode = 0
@@ -158,8 +158,8 @@ positional arguments:
             "commands": {}
         }
         
-        with patch.object(sys.modules['mcp_server'], 'plugin_registry', {"test_plugin": mock_plugin_info}):
-            with patch('mcp_server.subprocess.run') as mock_run:
+        with patch.object(sys.modules['mcp.mcp_server'], 'plugin_registry', {"test_plugin": mock_plugin_info}):
+            with patch('mcp.mcp_server.subprocess.run') as mock_run:
                 # Mock help output that includes all command types
                 mock_result = MagicMock()
                 mock_result.returncode = 0
@@ -215,4 +215,16 @@ positional arguments:
                 status_tool = next((t for t in tools if t["name"] == "test_plugin.status"), None)
                 assert status_tool is not None
                 assert "app-name" in status_tool["inputSchema"]["properties"]
-                assert "app-name" in status_tool["inputSchema"]["required"] 
+                assert "app-name" in status_tool["inputSchema"]["required"]
+    
+    def test_build_tools_manifest_error_handling(self):
+        """Test error handling in build_tools_manifest when subprocess.run raises an exception."""
+        mock_plugin_info = {
+            "path": "/path/to/plugin/cli.py",
+            "commands": {}
+        }
+        with patch.object(sys.modules['mcp.mcp_server'], 'plugin_registry', {"test_plugin": mock_plugin_info}):
+            with patch('mcp.mcp_server.subprocess.run', side_effect=Exception("subprocess error")):
+                tools = build_tools_manifest()
+                assert isinstance(tools, list)
+                assert len(tools) == 0 

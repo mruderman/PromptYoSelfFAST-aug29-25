@@ -11,7 +11,7 @@ class TestHTTPEndpoints:
     """Test cases for HTTP endpoints."""
     
     @pytest.mark.asyncio
-    @pytest.mark.timeout(30)  # 30 second timeout for health check
+    @pytest.mark.timeout(10)  # 10 second timeout for health check
     async def test_health_endpoint(self, client):
         """Test health check endpoint."""
         async with client.get('/health') as response:
@@ -27,10 +27,10 @@ class TestHTTPEndpoints:
             assert isinstance(data["sessions"], int)
     
     @pytest.mark.asyncio
-    @pytest.mark.timeout(30)  # 30 second timeout for message endpoint
+    @pytest.mark.timeout(10)  # 10 second timeout for message endpoint
     async def test_message_endpoint_valid_request(self, client, sample_jsonrpc_request, sample_jsonrpc_response):
         """Test message endpoint with valid JSON-RPC request."""
-        async with client.post('/message', json=sample_jsonrpc_request) as response:
+        async with client.post('/mcp/message', json=sample_jsonrpc_request) as response:
             assert response.status == 200
             
             data = await response.json()
@@ -40,10 +40,10 @@ class TestHTTPEndpoints:
             assert data["id"] == sample_jsonrpc_request["id"]
     
     @pytest.mark.asyncio
-    @pytest.mark.timeout(30)  # 30 second timeout for invalid JSON
+    @pytest.mark.timeout(10)  # 10 second timeout for invalid JSON
     async def test_message_endpoint_invalid_json(self, client):
         """Test message endpoint with invalid JSON."""
-        async with client.post('/message', data="invalid json") as response:
+        async with client.post('/mcp/message', data="invalid json") as response:
             assert response.status == 400
             assert response.headers['Content-Type'] == 'application/json'
             
@@ -52,7 +52,7 @@ class TestHTTPEndpoints:
             assert data["error"]["code"] == -32700  # Parse error
     
     @pytest.mark.asyncio
-    @pytest.mark.timeout(30)  # 30 second timeout for invalid method
+    @pytest.mark.timeout(10)  # 10 second timeout for invalid method
     async def test_message_endpoint_invalid_jsonrpc_version(self, client):
         """Test message endpoint with invalid JSON-RPC version."""
         request = {
@@ -62,7 +62,7 @@ class TestHTTPEndpoints:
             "params": {}
         }
         
-        async with client.post('/message', json=request) as response:
+        async with client.post('/mcp/message', json=request) as response:
             assert response.status == 200
             
             data = await response.json()
@@ -73,7 +73,7 @@ class TestHTTPEndpoints:
             assert "jsonrpc must be '2.0'" in data["error"]["message"]
     
     @pytest.mark.asyncio
-    @pytest.mark.timeout(30)  # 30 second timeout for missing tool name
+    @pytest.mark.timeout(10)  # 10 second timeout for missing tool name
     async def test_message_endpoint_missing_tool_name(self, client):
         """Test message endpoint with missing tool name."""
         request = {
@@ -85,7 +85,7 @@ class TestHTTPEndpoints:
             }
         }
         
-        async with client.post('/message', json=request) as response:
+        async with client.post('/mcp/message', json=request) as response:
             assert response.status == 200
             
             data = await response.json()
@@ -96,7 +96,7 @@ class TestHTTPEndpoints:
             assert "missing tool name" in data["error"]["message"]
     
     @pytest.mark.asyncio
-    @pytest.mark.timeout(30)  # 30 second timeout for unknown method
+    @pytest.mark.timeout(10)  # 10 second timeout for unknown method
     async def test_message_endpoint_unknown_method(self, client):
         """Test message endpoint with unknown method."""
         request = {
@@ -106,7 +106,7 @@ class TestHTTPEndpoints:
             "params": {}
         }
         
-        async with client.post('/message', json=request) as response:
+        async with client.post('/mcp/message', json=request) as response:
             assert response.status == 200
             
             data = await response.json()
@@ -117,10 +117,10 @@ class TestHTTPEndpoints:
             assert "Method not found" in data["error"]["message"]
     
     @pytest.mark.asyncio
-    @pytest.mark.timeout(30)  # 30 second timeout for non-dict body
+    @pytest.mark.timeout(10)  # 10 second timeout for non-dict body
     async def test_message_endpoint_non_dict_body(self, client):
         """Test message endpoint with non-dict body."""
-        async with client.post('/message', json="not a dict") as response:
+        async with client.post('/mcp/message', json="not a dict") as response:
             assert response.status == 200
             
             data = await response.json()
@@ -131,7 +131,7 @@ class TestHTTPEndpoints:
             assert "Invalid Request" in data["error"]["message"]
     
     @pytest.mark.asyncio
-    @pytest.mark.timeout(30)  # 30 second timeout for tools call
+    @pytest.mark.timeout(10)  # 10 second timeout for tools call
     async def test_message_endpoint_tool_execution_success(self, client):
         """Test message endpoint with successful tool execution."""
         request = {
@@ -146,7 +146,7 @@ class TestHTTPEndpoints:
         
         # Mock the plugin registry and execution
         with pytest.MonkeyPatch().context() as m:
-            m.setattr('mcp_server.plugin_registry', {
+            m.setattr('mcp.mcp_server.plugin_registry', {
                 "test_plugin": {
                     "path": "/path/to/plugin/cli.py",
                     "commands": {}
@@ -163,7 +163,7 @@ class TestHTTPEndpoints:
             
             m.setattr('subprocess.run', lambda *args, **kwargs: mock_result)
             
-            async with client.post('/message', json=request) as response:
+            async with client.post('/mcp/message', json=request) as response:
                 assert response.status == 200
                 
                 data = await response.json()
@@ -176,7 +176,7 @@ class TestHTTPEndpoints:
                 assert "Test result: test_value" in data["result"]["content"][0]["text"]
     
     @pytest.mark.asyncio
-    @pytest.mark.timeout(30)  # 30 second timeout for tools call
+    @pytest.mark.timeout(10)  # 10 second timeout for tools call
     async def test_message_endpoint_tool_execution_error(self, client):
         """Test message endpoint with tool execution error."""
         request = {
@@ -191,7 +191,7 @@ class TestHTTPEndpoints:
         
         # Mock the plugin registry and execution
         with pytest.MonkeyPatch().context() as m:
-            m.setattr('mcp_server.plugin_registry', {
+            m.setattr('mcp.mcp_server.plugin_registry', {
                 "test_plugin": {
                     "path": "/path/to/plugin/cli.py",
                     "commands": {}
@@ -208,7 +208,7 @@ class TestHTTPEndpoints:
             
             m.setattr('subprocess.run', lambda *args, **kwargs: mock_result)
             
-            async with client.post('/message', json=request) as response:
+            async with client.post('/mcp/message', json=request) as response:
                 assert response.status == 200
                 
                 data = await response.json()
@@ -219,9 +219,10 @@ class TestHTTPEndpoints:
                 assert "Plugin execution failed" in data["error"]["message"]
     
     @pytest.mark.asyncio
+    @pytest.mark.timeout(10)  # 10 second timeout for CORS headers
     async def test_cors_headers(self, client):
         """Test that CORS headers are properly set."""
-        async with client.get('/health') as response:
+        async with client.get('/mcp/message') as response:
             assert response.status == 200
             
             # Check for CORS headers
@@ -230,9 +231,10 @@ class TestHTTPEndpoints:
             assert 'Access-Control-Allow-Headers' in response.headers
     
     @pytest.mark.asyncio
+    @pytest.mark.timeout(10)  # 10 second timeout for OPTIONS request
     async def test_options_request(self, client):
         """Test OPTIONS request for CORS preflight."""
-        async with client.options('/message') as response:
+        async with client.options('/mcp/message') as response:
             assert response.status == 200
             
             # Check for CORS headers

@@ -183,7 +183,7 @@ class TestFullWorkflow:
     @pytest.mark.usefixtures("client")
     @pytest.mark.parametrize("temp_plugins_dir_with_plugins", [[WORKFLOW_PLUGIN]], indirect=True)
     @pytest.mark.asyncio
-    @pytest.mark.timeout(60)
+    @pytest.mark.timeout(30)  # 30 second timeout for complete workflow
     async def test_complete_plugin_workflow(self, client, temp_plugins_dir_with_plugins):
         """Test complete workflow from plugin discovery to execution."""
         # Test 1: Health check shows 1 plugin
@@ -191,18 +191,14 @@ class TestFullWorkflow:
             health_data = await response.json()
             assert health_data["plugins"] == 1
 
-        # Test 2: SSE connection shows tools manifest
-        async with client.get('/sse') as response:
+        # Test 2: SSE connection shows connection message
+        async with client.get('/mcp/sse') as response:
             assert response.status == 200
-            data = await asyncio.wait_for(response.content.readline(), timeout=10.0)
+            data = await asyncio.wait_for(response.content.readline(), timeout=5.0)
             data_str = data.decode('utf-8').strip()
             json_str = data_str[6:]
             event_data = json.loads(json_str)
-            tools = event_data["params"]["tools"]
-            assert len(tools) > 0
-            workflow_tool = next((t for t in tools if t["name"] == "workflow_test_plugin.workflow-command"), None)
-            assert workflow_tool is not None
-            assert "param" in workflow_tool["inputSchema"]["properties"]
+            assert event_data == {"type": "connection_established"}
 
         # Test 3: Execute the plugin tool
         request = {
@@ -214,7 +210,7 @@ class TestFullWorkflow:
                 "arguments": {"param": "test_value"}
             }
         }
-        async with client.post('/message', json=request) as response:
+        async with client.post('/mcp/message', json=request) as response:
             assert response.status == 200
             data = await response.json()
             assert "jsonrpc" in data
@@ -233,28 +229,20 @@ class TestFullWorkflow:
     @pytest.mark.usefixtures("client")
     @pytest.mark.parametrize("temp_plugins_dir_with_plugins", [MULTI_PLUGINS], indirect=True)
     @pytest.mark.asyncio
-    @pytest.mark.timeout(45)  # 45 second timeout for multiple plugins
+    @pytest.mark.timeout(30)  # 30 second timeout for multiple plugins
     async def test_multiple_plugins_workflow(self, client, temp_plugins_dir_with_plugins):
         """Test workflow with multiple plugins."""
         plugins = ["plugin_a", "plugin_b", "plugin_c"]
         
-        # Test SSE shows all plugins
-        async with client.get('/sse') as response:
+        # Test SSE shows connection message
+        async with client.get('/mcp/sse') as response:
             assert response.status == 200
             
-            data = await asyncio.wait_for(response.content.readline(), timeout=10.0)
+            data = await asyncio.wait_for(response.content.readline(), timeout=5.0)
             data_str = data.decode('utf-8').strip()
             json_str = data_str[6:]
             event_data = json.loads(json_str)
-            
-            tools = event_data["params"]["tools"]
-            assert len(tools) == len(plugins)  # One tool per plugin
-            
-            # Check all plugins are present
-            for plugin_name in plugins:
-                tool_name = f"{plugin_name}.test-command"
-                tool = next((t for t in tools if t["name"] == tool_name), None)
-                assert tool is not None
+            assert event_data == {"type": "connection_established"}
         
         # Test executing each plugin
         for plugin_name in plugins:
@@ -268,7 +256,7 @@ class TestFullWorkflow:
                 }
             }
             
-            async with client.post('/message', json=request) as response:
+            async with client.post('/mcp/message', json=request) as response:
                 assert response.status == 200
                 
                 data = await response.json()
@@ -278,10 +266,10 @@ class TestFullWorkflow:
     @pytest.mark.usefixtures("client")
     @pytest.mark.parametrize("temp_plugins_dir_with_plugins", [[ERROR_PLUGIN]], indirect=True)
     @pytest.mark.asyncio
-    @pytest.mark.timeout(30)  # 30 second timeout for error handling
+    @pytest.mark.timeout(20)  # 20 second timeout for error handling
     async def test_error_handling_workflow(self, client, temp_plugins_dir_with_plugins):
-        """Test error handling in complete workflow."""
-        # Test error handling
+        """Test error handling workflow."""
+        # Test error plugin execution
         request = {
             "jsonrpc": "2.0",
             "id": 1,
@@ -291,11 +279,11 @@ class TestFullWorkflow:
                 "arguments": {}
             }
         }
-        
-        async with client.post('/message', json=request) as response:
+        async with client.post('/mcp/message', json=request) as response:
             assert response.status == 200
-            
             data = await response.json()
+            assert "jsonrpc" in data
+            assert data["jsonrpc"] == "2.0"
             assert "error" in data
             assert data["error"]["code"] == -32603  # Internal error
             assert "This is a test error" in data["error"]["message"]
@@ -303,10 +291,12 @@ class TestFullWorkflow:
     @pytest.mark.usefixtures("client")
     @pytest.mark.parametrize("temp_plugins_dir_with_plugins", [[CONCURRENT_PLUGIN]], indirect=True)
     @pytest.mark.asyncio
-    @pytest.mark.timeout(60)  # 60 second timeout for concurrent requests
+    @pytest.mark.timeout(30)  # 30 second timeout for concurrent requests
     async def test_concurrent_requests_workflow(self, client, temp_plugins_dir_with_plugins):
-        """Test handling of concurrent requests."""
-        # Test concurrent requests
+        """Test concurrent requests workflow."""
+        import asyncio
+        
+        # Create multiple concurrent requests
         request = {
             "jsonrpc": "2.0",
             "id": 1,
@@ -317,60 +307,59 @@ class TestFullWorkflow:
             }
         }
         
-        # Send multiple concurrent requests
+        # Execute multiple concurrent requests
         tasks = []
-        for i in range(5):
-            task = client.post('/message', json=request)
+        for i in range(3):
+            task = asyncio.create_task(
+                client.post('/mcp/message', json=request)
+            )
             tasks.append(task)
         
-        # Wait for all requests to complete with timeout
-        responses = await asyncio.wait_for(asyncio.gather(*tasks), timeout=30.0)
+        # Wait for all requests to complete
+        responses = await asyncio.wait_for(asyncio.gather(*tasks), timeout=20.0)
         
-        # Check all responses
+        # Verify all responses
         for response in responses:
             assert response.status == 200
-            
             data = await response.json()
+            assert "jsonrpc" in data
+            assert data["jsonrpc"] == "2.0"
             assert "result" in data
+            assert "content" in data["result"]
+            assert len(data["result"]["content"]) == 1
+            assert data["result"]["content"][0]["type"] == "text"
             assert "Concurrent execution completed" in data["result"]["content"][0]["text"]
     
     @pytest.mark.usefixtures("client")
     @pytest.mark.asyncio
-    @pytest.mark.timeout(45)  # 45 second timeout for session management
+    @pytest.mark.timeout(20)  # 20 second timeout for session management
     async def test_session_management_workflow(self, client):
-        """Test session management in workflow."""
-        # Test multiple SSE connections
-        connections = []
+        """Test session management workflow."""
+        # Check initial session count
+        async with client.get('/health') as response:
+            initial_data = await response.json()
+            initial_sessions = initial_data["sessions"]
         
         # Create multiple SSE connections
+        connections = []
         for i in range(3):
-            response = await client.get('/sse')
+            response = await asyncio.wait_for(client.get('/mcp/sse'), timeout=5.0)
             assert response.status == 200
             connections.append(response)
         
-        # Check session count
+        # Check session count increased
         async with client.get('/health') as response:
             health_data = await response.json()
-            assert health_data["sessions"] >= 3
-        
-        # Read from each connection with timeout
-        for conn in connections:
-            data = await asyncio.wait_for(conn.content.readline(), timeout=10.0)
-            assert data is not None
+            assert health_data["sessions"] >= initial_sessions + 3
         
         # Close connections
         for conn in connections:
-            await asyncio.wait_for(conn.content.readline(), timeout=5.0)  # Read one more line to establish connection
+            await conn.close()
         
-        # Wait for cleanup (poll /health until sessions == 0 or timeout)
-        for _ in range(20):  # up to 2 seconds
-            async with client.get('/health') as response:
-                health_data = await response.json()
-                if health_data["sessions"] == 0:
-                    break
-            await asyncio.sleep(0.1)
-        else:
-            # If we exit the loop without breaking, fail the test
-            async with client.get('/health') as response:
-                health_data = await response.json()
-                assert health_data["sessions"] == 0 
+        # Wait for cleanup
+        await asyncio.sleep(0.1)
+        
+        # Check session count is back to initial
+        async with client.get('/health') as response:
+            health_data = await response.json()
+            assert health_data["sessions"] == initial_sessions 

@@ -226,22 +226,19 @@ async def sse_handler(request: Request) -> StreamResponse:
             'Content-Type': 'text/event-stream',
             'Cache-Control': 'no-cache',
             'Connection': 'keep-alive',
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Headers': 'Content-Type, Authorization'
         }
     )
     
     await response.prepare(request)
     
     try:
-        # Send initial tools manifest immediately
-        tools = build_tools_manifest()
-        manifest_event = {
-            "jsonrpc": "2.0",
-            "method": "notifications/tools/list",
-            "params": {"tools": tools}
+        # Send initial connection message
+        connection_event = {
+            "type": "connection_established"
         }
-        
-        await response.write(f"data: {json.dumps(manifest_event)}\n\n".encode())
-        logger.info(f"Sent tools manifest with {len(tools)} tools")
+        await response.write(f"data: {json.dumps(connection_event)}\n\n".encode())
         
         # Keep connection alive
         while not request.transport.is_closing():
@@ -289,7 +286,33 @@ async def message_handler(request: Request) -> Response:
                 "id": request_id
             })
         
-        if method == "tools/call":
+        if method == "initialize":
+            # Handle initialization
+            return web.json_response({
+                "jsonrpc": "2.0",
+                "id": request_id,
+                "result": {
+                    "protocolVersion": "2024-11-05",
+                    "capabilities": {
+                        "tools": {}
+                    },
+                    "serverInfo": {
+                        "name": "sanctum-letta-mcp",
+                        "version": "2.2.0"
+                    }
+                }
+            })
+        
+        elif method == "tools/list":
+            # Handle tools list request
+            tools = build_tools_manifest()
+            return web.json_response({
+                "jsonrpc": "2.0",
+                "id": request_id,
+                "result": {"tools": tools}
+            })
+        
+        elif method == "tools/call":
             # Handle tool invocation
             tool_name = params.get("name")
             arguments = params.get("arguments", {})
@@ -394,8 +417,8 @@ async def init_app() -> web.Application:
     })
     
     # Add routes
-    app.router.add_get('/sse', sse_handler)
-    app.router.add_post('/message', message_handler)
+    app.router.add_get('/mcp/sse', sse_handler)
+    app.router.add_post('/mcp/message', message_handler)
     app.router.add_get('/health', health_handler)
     
     # Apply CORS to all routes

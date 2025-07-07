@@ -13,10 +13,10 @@ from aiohttp.test_utils import TestClient, TestServer
 from pathlib import Path
 import pytest_asyncio
 
-# Add the mcp directory to the path
-sys.path.insert(0, str(Path(__file__).parent.parent / "mcp"))
+# Add the project root to the path
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from mcp_server import init_app, discover_plugins, build_tools_manifest, execute_plugin_tool
+from mcp.mcp_server import init_app, discover_plugins, build_tools_manifest, execute_plugin_tool
 
 
 @pytest.fixture
@@ -139,7 +139,7 @@ def temp_plugins_dir_with_plugins(request, temp_plugins_dir):
 @pytest_asyncio.fixture
 async def app(temp_plugins_dir_with_plugins):
     """Create a test application instance."""
-    from mcp_server import init_app
+    from mcp.mcp_server import init_app
     return await init_app()
 
 
