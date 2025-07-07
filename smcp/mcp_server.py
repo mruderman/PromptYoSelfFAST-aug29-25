@@ -265,16 +265,41 @@ async def sse_handler(request: Request) -> StreamResponse:
     sessions[session_id]["response"] = response
     
     try:
-        # According to the updated guide, we should NOT send any initial message
-        # The MCP library will send an 'initialize' message to start the conversation
         logger.info(f"SSE connection ready for session {session_id} - waiting for client messages")
         
-        # Keep connection alive and wait for client messages
+        # Keep connection alive and handle bidirectional communication
         while True:
             transport = request.transport
             if transport is None or transport.is_closing():
                 break
-            await asyncio.sleep(1)
+                
+            # Check if there's data to read from the client
+            if hasattr(request, 'content') and request.content:
+                try:
+                    # Read available data
+                    data = await request.content.read(1024)
+                    if data:
+                        # Try to parse as JSON-RPC message
+                        try:
+                            message = json.loads(data.decode('utf-8'))
+                            logger.info(f"Received message over SSE: {json.dumps(message, indent=2)}")
+                            
+                            # Handle the message
+                            response_data = await handle_mcp_message(message)
+                            
+                            # Send response back over SSE
+                            if response_data:
+                                await send_sse_message(session_id, response_data)
+                                
+                        except json.JSONDecodeError:
+                            logger.warning(f"Invalid JSON received over SSE: {data}")
+                        except Exception as e:
+                            logger.error(f"Error handling SSE message: {e}")
+                            
+                except Exception as e:
+                    logger.error(f"Error reading SSE data: {e}")
+                    
+            await asyncio.sleep(0.1)  # Small delay to prevent busy waiting
             
     except Exception as e:
         logger.error(f"Error in SSE connection {session_id}: {e}")
@@ -287,44 +312,38 @@ async def sse_handler(request: Request) -> StreamResponse:
     return response
 
 
-async def message_handler(request: Request) -> Response:
-    """Handle MCP message requests (tool invocations)."""
-    logger.info(f"Message endpoint called with method: {request.method}")
-    logger.info(f"Message endpoint headers: {dict(request.headers)}")
-    
+async def handle_mcp_message(message: Dict[str, Any]) -> Dict[str, Any]:
+    """Handle MCP protocol messages."""
     try:
-        body = await request.json()
-        logger.info(f"Message endpoint received body: {json.dumps(body, indent=2)}")
-        
         # Validate JSON-RPC 2.0 format
-        if not isinstance(body, dict):
-            return web.json_response({
+        if not isinstance(message, dict):
+            return {
                 "jsonrpc": "2.0",
                 "error": {
                     "code": -32600,
                     "message": "Invalid Request"
                 },
                 "id": None
-            })
+            }
         
-        jsonrpc = body.get("jsonrpc")
-        request_id = body.get("id")
-        method = body.get("method")
-        params = body.get("params", {})
+        jsonrpc = message.get("jsonrpc")
+        request_id = message.get("id")
+        method = message.get("method")
+        params = message.get("params", {})
         
         if jsonrpc != "2.0":
-            return web.json_response({
+            return {
                 "jsonrpc": "2.0",
                 "error": {
                     "code": -32600,
                     "message": "Invalid Request: jsonrpc must be '2.0'"
                 },
                 "id": request_id
-            })
+            }
         
         if method == "initialize":
             # Handle initialization
-            return web.json_response({
+            return {
                 "jsonrpc": "2.0",
                 "id": request_id,
                 "result": {
@@ -337,18 +356,18 @@ async def message_handler(request: Request) -> Response:
                         "version": "2.2.0"
                     }
                 }
-            })
+            }
         
         elif method == "tools/list":
             # Handle tools list request
-            logger.info(f"Tools list request received for session {request_id}")
+            logger.info(f"Tools list request received")
             tools = build_tools_manifest()
             logger.info(f"Returning {len(tools)} tools")
-            return web.json_response({
+            return {
                 "jsonrpc": "2.0",
                 "id": request_id,
                 "result": {"tools": tools}
-            })
+            }
         
         elif method == "tools/call":
             # Handle tool invocation
@@ -356,29 +375,29 @@ async def message_handler(request: Request) -> Response:
             arguments = params.get("arguments", {})
             
             if not tool_name:
-                return web.json_response({
+                return {
                     "jsonrpc": "2.0",
                     "error": {
                         "code": -32602,
                         "message": "Invalid params: missing tool name"
                     },
                     "id": request_id
-                })
+                }
             
             # Execute the tool
             result = await execute_plugin_tool(tool_name, arguments)
             
             if "error" in result:
-                return web.json_response({
+                return {
                     "jsonrpc": "2.0",
                     "error": {
                         "code": -32603,
                         "message": result["error"]
                     },
                     "id": request_id
-                })
+                }
             else:
-                return web.json_response({
+                return {
                     "jsonrpc": "2.0",
                     "result": {
                         "content": [
@@ -389,37 +408,28 @@ async def message_handler(request: Request) -> Response:
                         ]
                     },
                     "id": request_id
-                })
+                }
         
         else:
-            return web.json_response({
+            return {
                 "jsonrpc": "2.0",
                 "error": {
                     "code": -32601,
                     "message": f"Method not found: {method}"
                 },
                 "id": request_id
-            })
+            }
             
-    except json.JSONDecodeError:
-        return web.json_response({
-            "jsonrpc": "2.0",
-            "error": {
-                "code": -32700,
-                "message": "Parse error"
-            },
-            "id": None
-        })
     except Exception as e:
-        logger.error(f"Error handling message: {e}")
-        return web.json_response({
+        logger.error(f"Error handling MCP message: {e}")
+        return {
             "jsonrpc": "2.0",
             "error": {
                 "code": -32603,
                 "message": "Internal error"
             },
-            "id": body.get("id") if isinstance(body, dict) else None
-        })
+            "id": message.get("id") if isinstance(message, dict) else None
+        }
 
 
 async def health_handler(request: Request) -> Response:
@@ -456,7 +466,6 @@ async def init_app() -> web.Application:
     
     # Add routes
     app.router.add_get('/mcp/sse', sse_handler)
-    app.router.add_post('/mcp/message', message_handler)
     app.router.add_get('/health', health_handler)
     
     # Apply CORS to all routes
