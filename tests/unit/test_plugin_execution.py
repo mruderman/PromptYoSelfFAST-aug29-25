@@ -13,7 +13,7 @@ from pathlib import Path
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "mcp"))
 
-from mcp.mcp_server import execute_plugin_tool
+from smcp.mcp_server import execute_plugin_tool
 
 
 class TestPluginExecution:
@@ -22,7 +22,7 @@ class TestPluginExecution:
     @pytest.mark.asyncio
     async def test_execute_plugin_tool_invalid_format(self):
         """Test executing plugin tool with invalid tool name format."""
-        with patch('mcp.mcp_server.plugin_registry', {}):
+        with patch('smcp.mcp_server.plugin_registry', {}):
             result = await execute_plugin_tool("invalid_tool_name", {})
             
             assert "error" in result
@@ -31,7 +31,7 @@ class TestPluginExecution:
     @pytest.mark.asyncio
     async def test_execute_plugin_tool_plugin_not_found(self):
         """Test executing plugin tool when plugin is not found."""
-        with patch('mcp.mcp_server.plugin_registry', {}):
+        with patch('smcp.mcp_server.plugin_registry', {}):
             result = await execute_plugin_tool("nonexistent_plugin.command", {})
             
             assert "error" in result
@@ -41,7 +41,7 @@ class TestPluginExecution:
     @pytest.mark.asyncio
     async def test_execute_plugin_tool_success(self, mock_plugin_cli):
         """Test successful plugin tool execution."""
-        with patch('mcp.mcp_server.plugin_registry', {"test_plugin": {"path": str(mock_plugin_cli)}}):
+        with patch('smcp.mcp_server.plugin_registry', {"test_plugin": {"path": str(mock_plugin_cli)}}):
             with patch('subprocess.run') as mock_run:
                 # Mock successful subprocess execution
                 mock_result = MagicMock()
@@ -65,7 +65,7 @@ class TestPluginExecution:
     @pytest.mark.asyncio
     async def test_execute_plugin_tool_error(self, mock_plugin_cli):
         """Test plugin tool execution with error."""
-        with patch('mcp.mcp_server.plugin_registry', {"test_plugin": {"path": str(mock_plugin_cli)}}):
+        with patch('smcp.mcp_server.plugin_registry', {"test_plugin": {"path": str(mock_plugin_cli)}}):
             with patch('subprocess.run') as mock_run:
                 # Mock subprocess execution with error
                 mock_result = MagicMock()
@@ -82,7 +82,7 @@ class TestPluginExecution:
     @pytest.mark.asyncio
     async def test_execute_plugin_tool_invalid_json(self, mock_plugin_cli):
         """Test plugin tool execution with invalid JSON output."""
-        with patch('mcp.mcp_server.plugin_registry', {"test_plugin": {"path": str(mock_plugin_cli)}}):
+        with patch('smcp.mcp_server.plugin_registry', {"test_plugin": {"path": str(mock_plugin_cli)}}):
             with patch('subprocess.run') as mock_run:
                 # Mock subprocess execution with invalid JSON
                 mock_result = MagicMock()
@@ -99,7 +99,7 @@ class TestPluginExecution:
     @pytest.mark.asyncio
     async def test_execute_plugin_tool_subprocess_failure(self, mock_plugin_cli):
         """Test plugin tool execution when subprocess fails to start."""
-        with patch('mcp.mcp_server.plugin_registry', {"test_plugin": {"path": str(mock_plugin_cli)}}):
+        with patch('smcp.mcp_server.plugin_registry', {"test_plugin": {"path": str(mock_plugin_cli)}}):
             with patch('subprocess.run') as mock_run:
                 # Mock subprocess failure
                 mock_run.side_effect = FileNotFoundError("Plugin not found")
@@ -113,7 +113,7 @@ class TestPluginExecution:
     @pytest.mark.asyncio
     async def test_execute_plugin_tool_timeout(self, mock_plugin_cli):
         """Test plugin tool execution timeout handling."""
-        with patch('mcp.mcp_server.plugin_registry', {"test_plugin": {"path": str(mock_plugin_cli)}}):
+        with patch('smcp.mcp_server.plugin_registry', {"test_plugin": {"path": str(mock_plugin_cli)}}):
             with patch('subprocess.run') as mock_run:
                 # Mock subprocess timeout
                 mock_run.side_effect = subprocess.TimeoutExpired(cmd=[str(mock_plugin_cli)], timeout=5)
@@ -127,7 +127,7 @@ class TestPluginExecution:
     @pytest.mark.asyncio
     async def test_execute_plugin_tool_empty_arguments(self, mock_plugin_cli):
         """Test plugin tool execution with empty arguments."""
-        with patch('mcp.mcp_server.plugin_registry', {"test_plugin": {"path": str(mock_plugin_cli)}}):
+        with patch('smcp.mcp_server.plugin_registry', {"test_plugin": {"path": str(mock_plugin_cli)}}):
             with patch('subprocess.run') as mock_run:
                 # Mock successful subprocess execution
                 mock_result = MagicMock()
@@ -149,7 +149,7 @@ class TestPluginExecution:
     @pytest.mark.asyncio
     async def test_execute_plugin_tool_complex_arguments(self, mock_plugin_cli):
         """Test plugin tool execution with complex arguments."""
-        with patch('mcp.mcp_server.plugin_registry', {"test_plugin": {"path": str(mock_plugin_cli)}}):
+        with patch('smcp.mcp_server.plugin_registry', {"test_plugin": {"path": str(mock_plugin_cli)}}):
             with patch('subprocess.run') as mock_run:
                 # Mock successful subprocess execution
                 mock_result = MagicMock()
@@ -182,7 +182,7 @@ class TestPluginExecution:
             "commands": {}
         }
         
-        with patch('mcp.mcp_server.plugin_registry', {"test_plugin": mock_plugin_info}):
+        with patch('smcp.mcp_server.plugin_registry', {"test_plugin": mock_plugin_info}):
             with patch('subprocess.run') as mock_run:
                 # Mock plugin execution with error
                 mock_result = MagicMock()
@@ -203,7 +203,7 @@ class TestPluginExecution:
             "commands": {}
         }
         
-        with patch('mcp.mcp_server.plugin_registry', {"test_plugin": mock_plugin_info}):
+        with patch('smcp.mcp_server.plugin_registry', {"test_plugin": mock_plugin_info}):
             with patch('subprocess.run') as mock_run:
                 # Mock subprocess failure
                 mock_result = MagicMock()
@@ -224,7 +224,7 @@ class TestPluginExecution:
             "commands": {}
         }
         
-        with patch('mcp.mcp_server.plugin_registry', {"test_plugin": mock_plugin_info}):
+        with patch('smcp.mcp_server.plugin_registry', {"test_plugin": mock_plugin_info}):
             with patch('subprocess.run') as mock_run:
                 # Mock successful execution but invalid JSON output
                 mock_result = MagicMock()
@@ -251,7 +251,7 @@ class TestPluginExecution:
             "flag": True
         }
         
-        with patch('mcp.mcp_server.plugin_registry', {"test_plugin": mock_plugin_info}):
+        with patch('smcp.mcp_server.plugin_registry', {"test_plugin": mock_plugin_info}):
             with patch('subprocess.run') as mock_run:
                 # Mock successful plugin execution
                 mock_result = MagicMock()
@@ -272,7 +272,7 @@ class TestPluginExecution:
             "commands": {}
         }
         
-        with patch('mcp.mcp_server.plugin_registry', {"test_plugin": mock_plugin_info}):
+        with patch('smcp.mcp_server.plugin_registry', {"test_plugin": mock_plugin_info}):
             with patch('subprocess.run') as mock_run:
                 # Mock general exception
                 mock_run.side_effect = Exception("Unexpected error")
@@ -289,7 +289,7 @@ class TestPluginExecution:
             "path": "/path/to/plugin/cli.py",
             "commands": {}
         }
-        with patch('mcp.mcp_server.plugin_registry', {"test_plugin": mock_plugin_info}):
+        with patch('smcp.mcp_server.plugin_registry', {"test_plugin": mock_plugin_info}):
             with patch('subprocess.run', side_effect=OSError("unexpected error")):
                 result = await execute_plugin_tool("test_plugin.test-command", {})
                 assert "error" in result

@@ -7,7 +7,7 @@ import json
 import sys
 from unittest.mock import patch, MagicMock
 
-from mcp.mcp_server import build_tools_manifest
+from smcp.mcp_server import build_tools_manifest
 
 
 class TestToolsManifest:
@@ -15,7 +15,7 @@ class TestToolsManifest:
     
     def test_build_tools_manifest_empty_registry(self):
         """Test building tools manifest with empty plugin registry."""
-        with patch.object(sys.modules['mcp.mcp_server'], 'plugin_registry', {}):
+        with patch.object(sys.modules['smcp.mcp_server'], 'plugin_registry', {}):
             tools = build_tools_manifest()
             
             assert isinstance(tools, list)
@@ -28,8 +28,8 @@ class TestToolsManifest:
             "commands": {}
         }
         
-        with patch.object(sys.modules['mcp.mcp_server'], 'plugin_registry', {"test_plugin": mock_plugin_info}):
-            with patch('mcp.mcp_server.subprocess.run') as mock_run:
+        with patch.object(sys.modules['smcp.mcp_server'], 'plugin_registry', {"test_plugin": mock_plugin_info}):
+            with patch('smcp.mcp_server.subprocess.run') as mock_run:
                 # Mock successful help command execution
                 mock_result = MagicMock()
                 mock_result.returncode = 0
@@ -74,8 +74,8 @@ optional arguments:
             "commands": {}
         }
         
-        with patch.object(sys.modules['mcp.mcp_server'], 'plugin_registry', {"test_plugin": mock_plugin_info}):
-            with patch('mcp.mcp_server.subprocess.run') as mock_run:
+        with patch.object(sys.modules['smcp.mcp_server'], 'plugin_registry', {"test_plugin": mock_plugin_info}):
+            with patch('smcp.mcp_server.subprocess.run') as mock_run:
                 # Mock failed help command execution
                 mock_result = MagicMock()
                 mock_result.returncode = 1
@@ -94,8 +94,8 @@ optional arguments:
             "commands": {}
         }
         
-        with patch.object(sys.modules['mcp.mcp_server'], 'plugin_registry', {"test_plugin": mock_plugin_info}):
-            with patch('mcp.mcp_server.subprocess.run') as mock_run:
+        with patch.object(sys.modules['smcp.mcp_server'], 'plugin_registry', {"test_plugin": mock_plugin_info}):
+            with patch('smcp.mcp_server.subprocess.run') as mock_run:
                 # Mock help command with invalid output
                 mock_result = MagicMock()
                 mock_result.returncode = 0
@@ -120,8 +120,8 @@ optional arguments:
             }
         }
         
-        with patch.object(sys.modules['mcp.mcp_server'], 'plugin_registry', mock_plugins):
-            with patch('mcp.mcp_server.subprocess.run') as mock_run:
+        with patch.object(sys.modules['smcp.mcp_server'], 'plugin_registry', mock_plugins):
+            with patch('smcp.mcp_server.subprocess.run') as mock_run:
                 # Mock successful help command execution for both plugins
                 mock_result = MagicMock()
                 mock_result.returncode = 0
@@ -159,8 +159,8 @@ positional arguments:
             "commands": {}
         }
         
-        with patch.object(sys.modules['mcp.mcp_server'], 'plugin_registry', {"test_plugin": mock_plugin_info}):
-            with patch('mcp.mcp_server.subprocess.run') as mock_run:
+        with patch.object(sys.modules['smcp.mcp_server'], 'plugin_registry', {"test_plugin": mock_plugin_info}):
+            with patch('smcp.mcp_server.subprocess.run') as mock_run:
                 # Mock help output that includes all command types
                 mock_result = MagicMock()
                 mock_result.returncode = 0
@@ -207,8 +207,8 @@ positional arguments:
             "commands": {}
         }
         
-        with patch.object(sys.modules['mcp.mcp_server'], 'plugin_registry', {"test_plugin": mock_plugin_info}):
-            with patch('mcp.mcp_server.subprocess.run') as mock_run:
+        with patch.object(sys.modules['smcp.mcp_server'], 'plugin_registry', {"test_plugin": mock_plugin_info}):
+            with patch('smcp.mcp_server.subprocess.run') as mock_run:
                 # Mock help output with specific command format
                 mock_result = MagicMock()
                 mock_result.returncode = 0
@@ -238,8 +238,8 @@ positional arguments:
             "commands": {}
         }
         
-        with patch.object(sys.modules['mcp.mcp_server'], 'plugin_registry', {"test_plugin": mock_plugin_info}):
-            with patch('mcp.mcp_server.subprocess.run') as mock_run:
+        with patch.object(sys.modules['smcp.mcp_server'], 'plugin_registry', {"test_plugin": mock_plugin_info}):
+            with patch('smcp.mcp_server.subprocess.run') as mock_run:
                 # Mock help output with Examples section
                 mock_result = MagicMock()
                 mock_result.returncode = 0

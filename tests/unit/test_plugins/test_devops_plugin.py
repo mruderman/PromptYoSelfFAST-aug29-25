@@ -10,7 +10,7 @@ import json
 from pathlib import Path
 
 # Dynamically import the correct cli.py for devops
-cli_path = Path(__file__).parent.parent.parent.parent / "mcp" / "plugins" / "devops" / "cli.py"
+cli_path = Path(__file__).parent.parent.parent.parent / "smcp" / "plugins" / "devops" / "cli.py"
 spec = importlib.util.spec_from_file_location("devops_cli", cli_path)
 devops_cli = importlib.util.module_from_spec(spec)
 sys.modules["devops_cli"] = devops_cli

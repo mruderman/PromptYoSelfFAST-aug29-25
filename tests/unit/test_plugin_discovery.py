@@ -7,7 +7,7 @@ import tempfile
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 
-from mcp.mcp_server import discover_plugins
+from smcp.mcp_server import discover_plugins
 
 
 class TestPluginDiscovery:
@@ -115,7 +115,7 @@ class TestPluginDiscovery:
         cli_path = plugin_dir / "cli.py"
         cli_path.touch()
         monkeypatch.setenv("MCP_PLUGINS_DIR", str(plugins_dir))
-        from mcp.mcp_server import discover_plugins
+        from smcp.mcp_server import discover_plugins
         plugins = discover_plugins()
         assert "env_plugin" in plugins
         monkeypatch.delenv("MCP_PLUGINS_DIR")
@@ -125,7 +125,7 @@ class TestPluginDiscovery:
         file_path = tmp_path / "not_a_dir"
         file_path.write_text("not a dir")
         monkeypatch.setenv("MCP_PLUGINS_DIR", str(file_path))
-        from mcp.mcp_server import discover_plugins
+        from smcp.mcp_server import discover_plugins
         
         # The function should raise an exception when trying to iterate over a file
         with pytest.raises(NotADirectoryError):
@@ -136,7 +136,7 @@ class TestPluginDiscovery:
     def test_init_app_and_main(self, monkeypatch):
         """Test init_app and main startup logic."""
         import importlib
-        mcp_server = importlib.import_module("mcp.mcp_server")
+        mcp_server = importlib.import_module("smcp.mcp_server")
         # Patch web.run_app to prevent actual server start
         monkeypatch.setattr(mcp_server.web, "run_app", lambda *a, **kw: None)
         # Patch asyncio.run to just call the function

@@ -18,6 +18,7 @@ from typing import Dict, Any, Optional, List
 from aiohttp import web, ClientSession
 from aiohttp.web import Request, Response, StreamResponse
 from aiohttp_cors import setup as cors_setup, ResourceOptions
+import smcp
 
 
 # Configure logging
@@ -36,6 +37,30 @@ sessions: Dict[str, Dict[str, Any]] = {}
 
 # Plugin registry
 plugin_registry: Dict[str, Dict[str, Any]] = {}
+
+
+async def send_sse_message(session_id: str, message: Dict[str, Any]) -> bool:
+    """Send a JSON-RPC message over SSE to a specific session."""
+    if session_id not in sessions:
+        logger.error(f"Session {session_id} not found")
+        return False
+    
+    session = sessions[session_id]
+    response = session.get("response")
+    
+    if response is None:
+        logger.error(f"No response object for session {session_id}")
+        return False
+    
+    try:
+        # Format as SSE message
+        raw_message = f"data: {json.dumps(message)}\n\n"
+        logger.info(f"Sending SSE message to session {session_id}: {json.dumps(message)}")
+        await response.write(raw_message.encode())
+        return True
+    except Exception as e:
+        logger.error(f"Error sending SSE message to session {session_id}: {e}")
+        return False
 
 
 def discover_plugins() -> Dict[str, Dict[str, Any]]:
@@ -212,13 +237,14 @@ async def execute_plugin_tool(tool_name: str, arguments: Dict[str, Any]) -> Dict
 
 
 async def sse_handler(request: Request) -> StreamResponse:
-    """Handle SSE connections for MCP protocol."""
+    """Handle SSE connections for MCP protocol with bidirectional communication."""
     session_id = str(uuid.uuid4())
     
     # Create session
     sessions[session_id] = {
         "id": session_id,
-        "created": asyncio.get_event_loop().time()
+        "created": asyncio.get_event_loop().time(),
+        "response": None
     }
     
     logger.info(f"New SSE connection established: {session_id}")
@@ -236,20 +262,14 @@ async def sse_handler(request: Request) -> StreamResponse:
     )
     
     await response.prepare(request)
+    sessions[session_id]["response"] = response
     
     try:
-        # Send initial connection message (simple format, not JSON-RPC)
-        connection_event = {
-            "type": "connection_established",
-            "session_id": session_id
-        }
-        raw_message = f"data: {json.dumps(connection_event)}\n\n"
-        logger.info(f"RAW SSE connection message: {json.dumps(connection_event)}")
-        logger.info(f"RAW SSE wire format: {repr(raw_message)}")
-        await response.write(raw_message.encode())
-        logger.info(f"Sent connection established for session {session_id}")
+        # According to the updated guide, we should NOT send any initial message
+        # The MCP library will send an 'initialize' message to start the conversation
+        logger.info(f"SSE connection ready for session {session_id} - waiting for client messages")
         
-        # Keep connection alive
+        # Keep connection alive and wait for client messages
         while True:
             transport = request.transport
             if transport is None or transport.is_closing():
@@ -458,5 +478,28 @@ def main():
     web.run_app(app, host=host, port=port)
 
 
+def register_all_tools():
+    global plugin_registry
+    plugin_registry = discover_plugins()
+    tools = build_tools_manifest()
+    for tool in tools:
+        tool_name = tool["name"]
+        input_schema = tool["inputSchema"]
+        description = tool["description"]
+        # Dynamically create a function for each tool
+        def make_tool(tool_name):
+            async def tool_func(**kwargs):
+                result = await execute_plugin_tool(tool_name, kwargs)
+                if "error" in result:
+                    raise Exception(result["error"])
+                return result["result"]
+            return tool_func
+        func = make_tool(tool_name)
+        func.__name__ = tool_name.replace('.', '_')
+        func.__doc__ = description
+        smcp.tool(name=tool_name, input_schema=input_schema, description=description)(func)
+
+
 if __name__ == "__main__":
-    main() 
+    register_all_tools()
+    smcp.run(transport="sse", port=8000) 

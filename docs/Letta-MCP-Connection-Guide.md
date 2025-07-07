@@ -2,6 +2,15 @@
 
 This guide provides comprehensive specifications for connecting Model Context Protocol (MCP) servers to Letta installations, with particular focus on Server-Sent Events (SSE) endpoints.
 
+## ⚠️ CRITICAL UPDATE
+
+**Previous versions of this documentation contained incorrect examples.** The key correction:
+
+- **❌ WRONG**: Custom JSON objects like `{"type": "connection_established"}`
+- **✅ CORRECT**: Pure JSON-RPC 2.0 messages for ALL communication
+
+Letta uses the official MCP library which expects **JSON-RPC 2.0 over SSE** for all messages. Custom message types are not supported.
+
 ## Table of Contents
 
 1. [Overview](#overview)
@@ -70,19 +79,21 @@ Your MCP server must implement a **Server-Sent Events (SSE) endpoint** that foll
 - **Connection**: Keep-alive
 - **Cache-Control**: `no-cache`
 
+**⚠️ CRITICAL**: SSE connections are persistent and never close automatically. Clients must implement timeouts or manual connection termination to prevent hanging.
+
 #### 2. SSE Message Format
 
-Each SSE message must follow the standard SSE format:
+Each SSE message must follow the standard SSE format with **JSON-RPC 2.0 messages**:
 
 ```
-data: <JSON_MESSAGE>\n\n
+data: <JSON_RPC_MESSAGE>\n\n
 ```
 
-Where `<JSON_MESSAGE>` is a valid JSON object representing the MCP protocol message.
+Where `<JSON_RPC_MESSAGE>` is a valid JSON-RPC 2.0 message. **ALL communication must use JSON-RPC 2.0 format** - there are no simple JSON objects or custom message types.
 
 #### 3. MCP Protocol Messages
 
-Your SSE endpoint must handle and respond to the following MCP protocol messages:
+Your SSE endpoint must handle and respond to the following MCP protocol messages. **All messages must be valid JSON-RPC 2.0 messages**:
 
 ##### Initialization Message
 ```json
@@ -343,17 +354,39 @@ Create a configuration file at `~/.letta/mcp_config.json`:
 
 ## Implementation Examples
 
+### ⚠️ CRITICAL PROTOCOL REQUIREMENTS
+
+**Letta uses the official MCP library** (`mcp.client.sse.sse_client`), which expects:
+
+1. **Pure JSON-RPC 2.0 over SSE** - All messages must be valid JSON-RPC 2.0
+2. **Bidirectional communication** - The MCP library sends requests and expects responses
+3. **No custom message types** - No "connection_established" or other custom JSON objects
+4. **Proper SSE format** - `data: <json-rpc-message>\n\n` for every message
+
+### Working Example: DeepWiki MCP Server
+
+A working example that Letta successfully connects to:
+- **URL**: `https://mcp.deepwiki.com/sse`
+- **Protocol**: JSON-RPC 2.0 over SSE
+- **Tools**: `ask_question`, `search_repos`, etc.
+
+This server demonstrates the correct protocol implementation.
+
 ### Python Flask SSE Server Example
 
 ```python
 from flask import Flask, Response, request
 import json
 import uuid
+import asyncio
+import threading
+from queue import Queue
 
 app = Flask(__name__)
 
-# Store active connections
+# Store active connections and message queues
 connections = {}
+message_queues = {}
 
 @app.route('/mcp/sse')
 def mcp_sse():
@@ -361,20 +394,19 @@ def mcp_sse():
         # Generate unique connection ID
         conn_id = str(uuid.uuid4())
         connections[conn_id] = True
+        message_queues[conn_id] = Queue()
         
         try:
-            # Send initial connection established
-            yield f"data: {json.dumps({'type': 'connection_established'})}\n\n"
-            
-            # Handle MCP protocol messages
+            # Wait for client to send messages
             while connections.get(conn_id):
-                # In a real implementation, you would read from a queue
-                # For this example, we'll just wait for client messages
+                # In a real implementation, you would handle bidirectional communication
+                # This is a simplified example - you need to implement proper message handling
                 pass
                 
         except GeneratorExit:
             # Client disconnected
             connections.pop(conn_id, None)
+            message_queues.pop(conn_id, None)
     
     return Response(
         generate(),
@@ -390,6 +422,17 @@ def mcp_sse():
 @app.route('/mcp/message', methods=['POST'])
 def handle_mcp_message():
     message = request.json
+    
+    # Validate JSON-RPC 2.0 message
+    if not isinstance(message, dict) or 'jsonrpc' not in message or message['jsonrpc'] != '2.0':
+        return json.dumps({
+            "jsonrpc": "2.0",
+            "id": message.get('id'),
+            "error": {
+                "code": -32600,
+                "message": "Invalid Request"
+            }
+        })
     
     # Handle different MCP message types
     if message.get('method') == 'initialize':
@@ -472,6 +515,8 @@ if __name__ == '__main__':
     app.run(debug=True, port=5000)
 ```
 
+**⚠️ IMPORTANT NOTE:** This Flask example is simplified and may not work directly with Letta. The MCP library expects a specific bidirectional communication protocol over SSE. For production use, consider using the official MCP server framework or implementing the full SSE protocol correctly.
+
 ### Node.js Express SSE Server Example
 
 ```javascript
@@ -496,9 +541,6 @@ app.get('/mcp/sse', (req, res) => {
     const connectionId = Date.now().toString();
     connections.set(connectionId, res);
 
-    // Send initial connection message
-    res.write(`data: ${JSON.stringify({type: 'connection_established'})}\n\n`);
-
     // Handle client disconnect
     req.on('close', () => {
         connections.delete(connectionId);
@@ -508,6 +550,19 @@ app.get('/mcp/sse', (req, res) => {
 app.post('/mcp/message', (req, res) => {
     const message = req.body;
     let response;
+
+    // Validate JSON-RPC 2.0 message
+    if (!message || message.jsonrpc !== '2.0') {
+        response = {
+            jsonrpc: "2.0",
+            id: message?.id,
+            error: {
+                code: -32600,
+                message: "Invalid Request"
+            }
+        };
+        return res.json(response);
+    }
 
     switch (message.method) {
         case 'initialize':
@@ -599,6 +654,34 @@ app.listen(5000, () => {
 });
 ```
 
+**⚠️ IMPORTANT NOTE:** This Node.js example is simplified and may not work directly with Letta. The MCP library expects a specific bidirectional communication protocol over SSE. For production use, consider using the official MCP server framework or implementing the full SSE protocol correctly.
+
+### Recommended: Use Official MCP Server Framework
+
+For production MCP servers, **strongly consider using the official MCP server framework**:
+
+```bash
+pip install mcp
+```
+
+**Example using official framework:**
+```python
+import mcp
+import asyncio
+
+# Define your tools
+@mcp.tool()
+async def example_tool(param1: str) -> str:
+    """An example tool"""
+    return f"Executed with parameter: {param1}"
+
+# Run the server
+if __name__ == "__main__":
+    mcp.run(transport="sse", port=5000)
+```
+
+This ensures compatibility with Letta and other MCP clients.
+
 ## Testing and Debugging
 
 ### 1. Test Your SSE Endpoint
@@ -607,6 +690,14 @@ Use a simple curl command to test your SSE endpoint:
 
 ```bash
 curl -N -H "Accept: text/event-stream" \
+     -H "Cache-Control: no-cache" \
+     https://your-mcp-server.com/mcp/sse
+```
+
+**⚠️ IMPORTANT**: This curl command will hang indefinitely. Use Ctrl+C to terminate it, or add a timeout:
+
+```bash
+timeout 10 curl -N -H "Accept: text/event-stream" \
      -H "Cache-Control: no-cache" \
      https://your-mcp-server.com/mcp/sse
 ```
@@ -654,7 +745,19 @@ curl -X POST "http://localhost:8080/v1/tools/mcp/servers/test" \
 
 #### 5. SSE Format Errors
 - **Cause**: Incorrect SSE message format
-- **Solution**: Ensure all messages follow `data: <json>\n\n` format
+- **Solution**: Ensure all messages follow `data: <json-rpc-message>\n\n` format with valid JSON-RPC 2.0
+
+#### 6. JSON-RPC Protocol Errors
+- **Cause**: Using custom JSON objects instead of JSON-RPC 2.0
+- **Solution**: All messages must be valid JSON-RPC 2.0 with `jsonrpc: "2.0"` field
+
+#### 7. Bidirectional Communication Issues
+- **Cause**: Not implementing proper request/response handling
+- **Solution**: The MCP library sends requests and expects responses over the same SSE connection
+
+#### 8. SSE Connection Hanging
+- **Cause**: SSE connections are persistent and never close automatically
+- **Solution**: Implement timeouts in your client code and handle connection termination gracefully
 
 ### Debug Logs
 
