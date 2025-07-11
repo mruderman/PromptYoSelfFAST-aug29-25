@@ -302,6 +302,92 @@ Tool responses are wrapped in content blocks:
 }
 ```
 
+## Plugin Architecture
+
+### Plugin Discovery
+
+The server discovers plugins by scanning the plugin directory (default: `smcp/plugins/`) for subdirectories containing a `cli.py` file. Each plugin directory represents a plugin namespace.
+
+### Plugin Directory Structure
+
+```
+smcp/plugins/
+├── botfather/
+│   ├── __init__.py
+│   └── cli.py
+├── devops/
+│   ├── __init__.py
+│   └── cli.py
+└── custom-plugin/
+    ├── __init__.py
+    └── cli.py
+```
+
+### Symlink Support
+
+The plugin discovery system fully supports symbolic links, enabling flexible plugin deployment architectures:
+
+#### Centralized Plugin Management
+
+You can centralize plugins in a designated location and use symlinks for discovery:
+
+```
+# Central plugin repository
+/opt/sanctum/plugins/
+├── botfather/
+├── devops/
+└── custom-plugin/
+
+# MCP server plugin directory with symlinks
+smcp/plugins/
+├── botfather -> /opt/sanctum/plugins/botfather
+├── devops -> /opt/sanctum/plugins/devops
+└── custom-plugin -> /opt/sanctum/plugins/custom-plugin
+```
+
+#### Benefits of Symlink Architecture
+
+1. **Separation of Concerns**: Keep MCP server code separate from plugin implementations
+2. **Centralized Management**: Manage plugins in a designated repository
+3. **Dynamic Loading**: Add/remove plugins by creating/removing symlinks
+4. **Version Control**: Maintain plugins in separate repositories
+5. **Deployment Flexibility**: Deploy plugins independently of the MCP server
+
+#### Symlink Examples
+
+```bash
+# Create symlink to centralized plugin
+ln -s /opt/sanctum/plugins/botfather smcp/plugins/botfather
+
+# Create symlink to user's custom plugin
+ln -s /home/user/custom-plugins/my-plugin smcp/plugins/my-plugin
+
+# Create symlink to network-mounted plugin
+ln -s /mnt/network/plugins/enterprise-plugin smcp/plugins/enterprise-plugin
+```
+
+#### Environment Variable Override
+
+You can override the plugin directory using the `MCP_PLUGINS_DIR` environment variable:
+
+```bash
+# Use custom plugin directory
+export MCP_PLUGINS_DIR=/opt/sanctum/plugins
+python smcp/mcp_server.py
+
+# Or specify directly
+MCP_PLUGINS_DIR=/opt/sanctum/plugins python smcp/mcp_server.py
+```
+
+### Plugin Execution
+
+Plugins are executed as subprocesses with the following characteristics:
+
+- **Isolation**: Each plugin runs in its own process
+- **Timeout**: 10-second timeout for help command execution
+- **Error Handling**: Failed plugins are logged but don't crash the server
+- **Arguments**: Plugin arguments are passed as command-line flags
+
 ## SSE Events
 
 ### Connection Events

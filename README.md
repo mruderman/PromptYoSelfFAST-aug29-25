@@ -99,6 +99,44 @@ plugins/
 │   └── README.md       # Plugin documentation
 ```
 
+### Plugin Deployment with Symlinks
+
+The server supports symbolic links for flexible plugin deployment. You can centralize plugins in a designated location and use symlinks for discovery:
+
+#### Centralized Plugin Management
+
+```
+# Central plugin repository
+/opt/sanctum/plugins/
+├── botfather/
+├── devops/
+└── custom-plugin/
+
+# MCP server plugin directory with symlinks
+smcp/plugins/
+├── botfather -> /opt/sanctum/plugins/botfather
+├── devops -> /opt/sanctum/plugins/devops
+└── custom-plugin -> /opt/sanctum/plugins/custom-plugin
+```
+
+#### Benefits
+
+- **Separation of Concerns**: Keep MCP server code separate from plugin implementations
+- **Centralized Management**: Manage plugins in a designated repository
+- **Dynamic Loading**: Add/remove plugins by creating/removing symlinks
+- **Version Control**: Maintain plugins in separate repositories
+- **Deployment Flexibility**: Deploy plugins independently of the MCP server
+
+#### Environment Variable Override
+
+You can override the plugin directory using the `MCP_PLUGINS_DIR` environment variable:
+
+```bash
+# Use custom plugin directory
+export MCP_PLUGINS_DIR=/opt/sanctum/plugins
+python smcp/mcp_server.py
+```
+
 ### Creating a Plugin
 
 1. **Create plugin directory**
