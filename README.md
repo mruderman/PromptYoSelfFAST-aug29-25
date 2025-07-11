@@ -47,7 +47,26 @@ A powerful, plugin-based Model Context Protocol (MCP) server for the Sanctum Let
    python smcp/mcp_server.py
    ```
 
-The server will start on `http://localhost:8000` by default.
+The server will start on `http://localhost:8000` by default with **localhost-only access** for security.
+
+### Security Features
+
+By default, the server only accepts connections from `localhost` (127.0.0.1) to ensure it can only be accessed from the same machine where Letta is running. This prevents unauthorized external access.
+
+**To allow external connections** (use with caution):
+```bash
+python smcp/mcp_server.py --allow-external
+```
+
+**Custom port**:
+```bash
+python smcp/mcp_server.py --port 9000
+```
+
+**Custom host binding**:
+```bash
+python smcp/mcp_server.py --host 0.0.0.0 --port 8000
+```
 
 ## 🔧 Configuration
 

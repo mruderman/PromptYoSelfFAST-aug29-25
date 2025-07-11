@@ -416,14 +416,40 @@ curl -X POST http://localhost:8000/messages/ \
 
 ## Configuration
 
+### Command Line Arguments
+
+| Argument | Default | Description |
+|----------|---------|-------------|
+| `--allow-external` | `False` | Allow external connections (default: localhost only) |
+| `--port` | `8000` | Port to run the server on |
+| `--host` | `127.0.0.1` | Host to bind to (default: localhost for security) |
+
 ### Environment Variables
 
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `MCP_PORT` | `8000` | Server port |
-| `MCP_HOST` | `0.0.0.0` | Server host |
 | `MCP_PLUGINS_DIR` | `smcp/plugins/` | Plugin directory |
 | `MCP_LOG_LEVEL` | `INFO` | Logging level |
+
+### Security Configuration
+
+By default, the server binds to `127.0.0.1` (localhost only) for security. This ensures that only processes running on the same machine can connect to the MCP server.
+
+**Examples**:
+```bash
+# Default: localhost only (secure)
+python smcp/mcp_server.py
+
+# Allow external connections (use with caution)
+python smcp/mcp_server.py --allow-external
+
+# Custom port with localhost-only
+python smcp/mcp_server.py --port 9000
+
+# Custom host and port
+python smcp/mcp_server.py --host 0.0.0.0 --port 8000
+```
 
 ### Server Configuration
 

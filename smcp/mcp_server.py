@@ -6,6 +6,7 @@ A Server-Sent Events (SSE) server for orchestrating plugin execution using the o
 Compliant with Model Context Protocol (MCP) specification.
 """
 
+import argparse
 import asyncio
 import json
 import logging
@@ -133,7 +134,7 @@ async def execute_plugin_tool(tool_name: str, arguments: Dict[str, Any], ctx: Co
         return {"error": error_msg}
 
 
-def create_tool_from_plugin(plugin_name: str, command: str, cli_path: str) -> None:
+def create_tool_from_plugin(server_instance: FastMCP, plugin_name: str, command: str, cli_path: str) -> None:
     """Create a tool from a plugin command and register it with FastMCP."""
     
     # Get help to determine parameters
@@ -189,7 +190,7 @@ def create_tool_from_plugin(plugin_name: str, command: str, cli_path: str) -> No
     if properties is not None:
         tool_name = f"{plugin_name}.{command}"
         
-        @server.tool(
+        @server_instance.tool(
             name=tool_name,
             description=f"{plugin_name} {command} command",
             annotations=ToolAnnotations(
@@ -213,7 +214,7 @@ def create_tool_from_plugin(plugin_name: str, command: str, cli_path: str) -> No
         logger.info(f"Registered tool: {tool_name}")
 
 
-def register_plugin_tools() -> None:
+def register_plugin_tools(server_instance: FastMCP) -> None:
     """Register all discovered plugin tools with the FastMCP server."""
     global plugin_registry
     
@@ -243,55 +244,117 @@ def register_plugin_tools() -> None:
                     parts = line.strip().split()
                     if parts and parts[0] not in ['usage:', 'options:', 'Available', 'Examples:']:
                         command = parts[0]
-                        create_tool_from_plugin(plugin_name, command, cli_path)
+                        create_tool_from_plugin(server_instance, plugin_name, command, cli_path)
 
 
-# Create FastMCP server instance
-server = FastMCP(
-    name="sanctum-letta-mcp",
-    instructions="A plugin-based MCP server for Sanctum Letta operations",
-    sse_path="/sse",
-    message_path="/messages/",
-    host="0.0.0.0",
-    port=int(os.getenv("MCP_PORT", "8000"))
-)
-
-
-@server.tool(
-    name="health",
-    description="Check server health and plugin status",
-    annotations=ToolAnnotations(
-        title="Health Check",
-        readOnlyHint=True,
-        destructiveHint=False,
-        idempotentHint=True,
-        openWorldHint=False
+# Global server instance (will be configured in main)
+def create_server(host: str, port: int) -> FastMCP:
+    """Create and configure the FastMCP server instance."""
+    return FastMCP(
+        name="sanctum-letta-mcp",
+        instructions="A plugin-based MCP server for Sanctum Letta operations",
+        sse_path="/sse",
+        message_path="/messages/",
+        host=host,
+        port=port
     )
-)
-async def health_check(ctx: Context) -> Sequence[ContentBlock]:
-    """Check server health and plugin status."""
-    # Only log if context is available (during actual requests)
-    try:
-        await ctx.info("Health check requested")
-    except ValueError:
-        # Context not available in unit tests, skip logging
-        pass
+
+# Global server instance (will be set in main)
+server = None
+
+
+def create_health_tool(server_instance: FastMCP):
+    """Create the health check tool."""
+    @server_instance.tool(
+        name="health",
+        description="Check server health and plugin status",
+        annotations=ToolAnnotations(
+            title="Health Check",
+            readOnlyHint=True,
+            destructiveHint=False,
+            idempotentHint=True,
+            openWorldHint=False
+        )
+    )
+    async def health_check(ctx: Context) -> Sequence[ContentBlock]:
+        """Check server health and plugin status."""
+        # Only log if context is available (during actual requests)
+        try:
+            await ctx.info("Health check requested")
+        except ValueError:
+            # Context not available in unit tests, skip logging
+            pass
+        
+        status = {
+            "status": "healthy",
+            "plugins": len(plugin_registry),
+            "plugin_names": list(plugin_registry.keys())
+        }
+        
+        return [TextContent(type="text", text=json.dumps(status, indent=2))]
+
+
+def parse_arguments():
+    """Parse command line arguments."""
+    parser = argparse.ArgumentParser(
+        description="Sanctum Letta MCP Server - A plugin-based MCP server for AI operations",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  python smcp/mcp_server.py                    # Run with localhost-only (default)
+  python smcp/mcp_server.py --allow-external   # Allow external connections
+  python smcp/mcp_server.py --port 9000        # Run on custom port
+        """
+    )
     
-    status = {
-        "status": "healthy",
-        "plugins": len(plugin_registry),
-        "plugin_names": list(plugin_registry.keys())
-    }
+    parser.add_argument(
+        "--allow-external",
+        action="store_true",
+        help="Allow external connections (default: localhost only)"
+    )
     
-    return [TextContent(type="text", text=json.dumps(status, indent=2))]
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=int(os.getenv("MCP_PORT", "8000")),
+        help="Port to run the server on (default: 8000 or MCP_PORT env var)"
+    )
+    
+    parser.add_argument(
+        "--host",
+        type=str,
+        default=None,
+        help="Host to bind to (default: 127.0.0.1 for localhost-only, 0.0.0.0 for external)"
+    )
+    
+    return parser.parse_args()
 
 
 def main():
     """Main entry point."""
-    logger.info("Starting Sanctum Letta MCP Server...")
+    args = parse_arguments()
+    
+    # Determine host binding based on security settings
+    if args.host:
+        host = args.host
+    elif args.allow_external:
+        host = "0.0.0.0"
+        logger.warning("⚠️  WARNING: External connections are allowed. This may pose security risks.")
+    else:
+        host = "127.0.0.1"
+        logger.info("🔒 Security: Server bound to localhost only. Use --allow-external to allow external connections.")
+    
+    logger.info(f"Starting Sanctum Letta MCP Server on {host}:{args.port}...")
+    
+    # Create server instance
+    global server
+    server = create_server(host, args.port)
+    
+    # Create health tool
+    create_health_tool(server)
     
     # Register plugin tools
-    register_plugin_tools()
+    register_plugin_tools(server)
     
     # Run the server with SSE transport
     logger.info("Starting server with SSE transport...")
