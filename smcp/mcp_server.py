@@ -188,6 +188,127 @@ def build_tools_manifest() -> List[Dict[str, Any]]:
     return tools
 
 
+async def process_mcp_message(message: Dict[str, Any], session_id: str) -> Optional[Dict[str, Any]]:
+    """Process MCP protocol messages."""
+    try:
+        # Validate JSON-RPC 2.0 format
+        if not isinstance(message, dict):
+            return {
+                "jsonrpc": "2.0",
+                "error": {
+                    "code": -32600,
+                    "message": "Invalid Request"
+                },
+                "id": None
+            }
+        
+        jsonrpc = message.get("jsonrpc")
+        request_id = message.get("id")
+        method = message.get("method")
+        params = message.get("params", {})
+        
+        if jsonrpc != "2.0":
+            return {
+                "jsonrpc": "2.0",
+                "error": {
+                    "code": -32600,
+                    "message": "Invalid Request: jsonrpc must be '2.0'"
+                },
+                "id": request_id
+            }
+        
+        if method == "initialize":
+            # Handle initialization
+            sessions[session_id]["initialized"] = True
+            return {
+                "jsonrpc": "2.0",
+                "id": request_id,
+                "result": {
+                    "protocolVersion": "2024-11-05",
+                    "capabilities": {
+                        "tools": {}
+                    },
+                    "serverInfo": {
+                        "name": "sanctum-letta-mcp",
+                        "version": "2.2.0"
+                    }
+                }
+            }
+        
+        elif method == "tools/list":
+            # Handle tools list request
+            logger.info(f"Tools list request received for session {session_id}")
+            tools = build_tools_manifest()
+            logger.info(f"Returning {len(tools)} tools")
+            return {
+                "jsonrpc": "2.0",
+                "id": request_id,
+                "result": {"tools": tools}
+            }
+        
+        elif method == "tools/call":
+            # Handle tool invocation
+            tool_name = params.get("name")
+            arguments = params.get("arguments", {})
+            
+            if not tool_name:
+                return {
+                    "jsonrpc": "2.0",
+                    "error": {
+                        "code": -32602,
+                        "message": "Invalid params: missing tool name"
+                    },
+                    "id": request_id
+                }
+            
+            # Execute the tool
+            result = await execute_plugin_tool(tool_name, arguments)
+            
+            if "error" in result:
+                return {
+                    "jsonrpc": "2.0",
+                    "error": {
+                        "code": -32603,
+                        "message": result["error"]
+                    },
+                    "id": request_id
+                }
+            else:
+                return {
+                    "jsonrpc": "2.0",
+                    "result": {
+                        "content": [
+                            {
+                                "type": "text",
+                                "text": str(result["result"])
+                            }
+                        ]
+                    },
+                    "id": request_id
+                }
+        
+        else:
+            return {
+                "jsonrpc": "2.0",
+                "error": {
+                    "code": -32601,
+                    "message": f"Method not found: {method}"
+                },
+                "id": request_id
+            }
+            
+    except Exception as e:
+        logger.error(f"Error processing MCP message: {e}")
+        return {
+            "jsonrpc": "2.0",
+            "error": {
+                "code": -32603,
+                "message": "Internal error"
+            },
+            "id": message.get("id") if isinstance(message, dict) else None
+        }
+
+
 async def execute_plugin_tool(tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
     """Execute a plugin tool command."""
     try:
@@ -237,14 +358,15 @@ async def execute_plugin_tool(tool_name: str, arguments: Dict[str, Any]) -> Dict
 
 
 async def sse_handler(request: Request) -> StreamResponse:
-    """Handle SSE connections for MCP protocol."""
+    """Handle SSE connections for MCP protocol with bidirectional communication."""
     session_id = str(uuid.uuid4())
     
     # Create session
     sessions[session_id] = {
         "id": session_id,
         "created": asyncio.get_event_loop().time(),
-        "response": None
+        "response": None,
+        "initialized": False
     }
     
     logger.info(f"New SSE connection established: {session_id}")
@@ -267,13 +389,52 @@ async def sse_handler(request: Request) -> StreamResponse:
     try:
         logger.info(f"SSE connection ready for session {session_id} - waiting for client messages")
         
-        # Keep connection alive
-        while True:
-            transport = request.transport
-            if transport is None or transport.is_closing():
-                break
-            await asyncio.sleep(1)
-            
+        # Read and process incoming messages
+        async for line in request.content:
+            try:
+                line_str = line.decode('utf-8').strip()
+                if not line_str:
+                    continue
+                
+                # Parse SSE data line
+                if line_str.startswith('data: '):
+                    data = line_str[6:]  # Remove 'data: ' prefix
+                    if data.strip():
+                        try:
+                            message = json.loads(data)
+                            logger.info(f"Received message on SSE: {json.dumps(message, indent=2)}")
+                            
+                            # Process the message
+                            result = await process_mcp_message(message, session_id)
+                            
+                            # Send response back over SSE
+                            if result:
+                                await send_sse_message(session_id, result)
+                                
+                        except json.JSONDecodeError as e:
+                            logger.error(f"Invalid JSON in SSE message: {e}")
+                            error_response = {
+                                "jsonrpc": "2.0",
+                                "error": {
+                                    "code": -32700,
+                                    "message": "Parse error"
+                                },
+                                "id": None
+                            }
+                            await send_sse_message(session_id, error_response)
+                            
+            except Exception as e:
+                logger.error(f"Error processing SSE message: {e}")
+                error_response = {
+                    "jsonrpc": "2.0",
+                    "error": {
+                        "code": -32603,
+                        "message": "Internal error"
+                    },
+                    "id": None
+                }
+                await send_sse_message(session_id, error_response)
+                
     except Exception as e:
         logger.error(f"Error in SSE connection {session_id}: {e}")
     finally:
@@ -454,7 +615,9 @@ async def init_app() -> web.Application:
     
     # Add routes
     app.router.add_get('/mcp/sse', sse_handler)
+    app.router.add_get('/sse', sse_handler)  # Add direct /sse route for Letta compatibility
     app.router.add_post('/mcp/message', message_handler)
+    app.router.add_post('/message', message_handler)  # Add direct /message route for Letta compatibility
     app.router.add_get('/health', health_handler)
     
     # Apply CORS to all routes
@@ -472,8 +635,7 @@ def main():
     
     logger.info(f"Starting MCP server on {host}:{port}")
     
-    app = asyncio.run(init_app())
-    web.run_app(app, host=host, port=port)
+    web.run_app(init_app(), host=host, port=port, print=lambda _: None)
 
 
 def register_all_tools():
