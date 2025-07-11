@@ -358,7 +358,7 @@ async def execute_plugin_tool(tool_name: str, arguments: Dict[str, Any]) -> Dict
 
 
 async def sse_handler(request: Request) -> StreamResponse:
-    """Handle SSE connections for MCP protocol with bidirectional communication."""
+    """Handle SSE connections for MCP protocol."""
     session_id = str(uuid.uuid4())
     
     # Create session
@@ -387,53 +387,14 @@ async def sse_handler(request: Request) -> StreamResponse:
     sessions[session_id]["response"] = response
     
     try:
-        logger.info(f"SSE connection ready for session {session_id} - waiting for client messages")
+        logger.info(f"SSE connection ready for session {session_id} - keeping connection alive")
         
-        # Read and process incoming messages
-        async for line in request.content:
-            try:
-                line_str = line.decode('utf-8').strip()
-                if not line_str:
-                    continue
-                
-                # Parse SSE data line
-                if line_str.startswith('data: '):
-                    data = line_str[6:]  # Remove 'data: ' prefix
-                    if data.strip():
-                        try:
-                            message = json.loads(data)
-                            logger.info(f"Received message on SSE: {json.dumps(message, indent=2)}")
-                            
-                            # Process the message
-                            result = await process_mcp_message(message, session_id)
-                            
-                            # Send response back over SSE
-                            if result:
-                                await send_sse_message(session_id, result)
-                                
-                        except json.JSONDecodeError as e:
-                            logger.error(f"Invalid JSON in SSE message: {e}")
-                            error_response = {
-                                "jsonrpc": "2.0",
-                                "error": {
-                                    "code": -32700,
-                                    "message": "Parse error"
-                                },
-                                "id": None
-                            }
-                            await send_sse_message(session_id, error_response)
-                            
-            except Exception as e:
-                logger.error(f"Error processing SSE message: {e}")
-                error_response = {
-                    "jsonrpc": "2.0",
-                    "error": {
-                        "code": -32603,
-                        "message": "Internal error"
-                    },
-                    "id": None
-                }
-                await send_sse_message(session_id, error_response)
+        # Keep the connection alive indefinitely
+        # The client will close the connection when done
+        while True:
+            await asyncio.sleep(1)
+            # The connection will be closed by the client or network issues
+            # We just keep it alive until an exception occurs
                 
     except Exception as e:
         logger.error(f"Error in SSE connection {session_id}: {e}")
