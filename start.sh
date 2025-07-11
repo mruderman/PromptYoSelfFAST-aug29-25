@@ -1,2 +1,2 @@
 source venv/bin/activate
-python smcp/mcp_server.py
+python mcp_server.py

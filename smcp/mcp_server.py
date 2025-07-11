@@ -2,7 +2,7 @@
 """
 Sanctum Letta MCP Server
 
-A Server-Sent Events (SSE) server for orchestrating plugin execution using aiohttp.
+A Server-Sent Events (SSE) server for orchestrating plugin execution using the official MCP library.
 Compliant with Model Context Protocol (MCP) specification.
 """
 
@@ -12,14 +12,10 @@ import logging
 import os
 import subprocess
 import sys
-import uuid
 from pathlib import Path
-from typing import Dict, Any, Optional, List
-from aiohttp import web, ClientSession
-from aiohttp.web import Request, Response, StreamResponse
-from aiohttp_cors import setup as cors_setup, ResourceOptions
-# Local imports for plugin functionality
-
+from typing import Dict, Any, List, Sequence
+from mcp.server.fastmcp import FastMCP, Context
+from mcp.types import ContentBlock, ToolAnnotations, TextContent
 
 # Configure logging
 logging.basicConfig(
@@ -32,35 +28,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Session management
-sessions: Dict[str, Dict[str, Any]] = {}
-
 # Plugin registry
 plugin_registry: Dict[str, Dict[str, Any]] = {}
-
-
-async def send_sse_message(session_id: str, message: Dict[str, Any]) -> bool:
-    """Send a JSON-RPC message over SSE to a specific session."""
-    if session_id not in sessions:
-        logger.error(f"Session {session_id} not found")
-        return False
-    
-    session = sessions[session_id]
-    response = session.get("response")
-    
-    if response is None:
-        logger.error(f"No response object for session {session_id}")
-        return False
-    
-    try:
-        # Format as SSE message
-        raw_message = f"data: {json.dumps(message)}\n\n"
-        logger.info(f"Sending SSE message to session {session_id}: {json.dumps(message)}")
-        await response.write(raw_message.encode())
-        return True
-    except Exception as e:
-        logger.error(f"Error sending SSE message to session {session_id}: {e}")
-        return False
 
 
 def discover_plugins() -> Dict[str, Dict[str, Any]]:
@@ -90,517 +59,243 @@ def discover_plugins() -> Dict[str, Dict[str, Any]]:
     return plugins
 
 
-def build_tools_manifest() -> List[Dict[str, Any]]:
-    """Build the tools manifest in MCP format."""
-    tools = []
-    logger.info(f"Building tools manifest from {len(plugin_registry)} plugins")
-    
-    for plugin_name, plugin_info in plugin_registry.items():
-        cli_path = plugin_info["path"]
-        
-        # Get help to extract available commands
-        logger.info(f"Getting help for plugin {plugin_name} from {cli_path}")
-        try:
-            result = subprocess.run(
-                [sys.executable, cli_path, "--help"],
-                capture_output=True,
-                text=True,
-                timeout=10
-            )
-            
-            if result.returncode == 0:
-                help_text = result.stdout
-                logger.info(f"Plugin {plugin_name} help output: {help_text[:200]}...")
-                lines = help_text.split('\n')
-                in_commands_section = False
-                for line in lines:
-                    if line.strip().startswith("Available commands:"):
-                        in_commands_section = True
-                        continue
-                    if in_commands_section:
-                        # End of commands section if we hit an empty line or Examples
-                        if not line.strip() or line.strip().startswith("Examples"):
-                            in_commands_section = False
-                            continue
-                        if line.startswith('  '):
-                            parts = line.strip().split()
-                            if parts and parts[0] not in ['usage:', 'options:', 'Available', 'Examples:']:
-                                command = parts[0]
-                                properties = {}
-                                required = []
-                                if command == "click-button":
-                                    properties = {
-                                        "button-text": {"type": "string", "description": "Text of the button to click"},
-                                        "msg-id": {"type": "integer", "description": "Message ID containing the button"}
-                                    }
-                                    required = ["button-text", "msg-id"]
-                                elif command == "send-message":
-                                    properties = {
-                                        "message": {"type": "string", "description": "Message to send"}
-                                    }
-                                    required = ["message"]
-                                elif command == "deploy":
-                                    properties = {
-                                        "app-name": {"type": "string", "description": "Name of the application to deploy"},
-                                        "environment": {"type": "string", "description": "Deployment environment", "default": "production"}
-                                    }
-                                    required = ["app-name"]
-                                elif command == "rollback":
-                                    properties = {
-                                        "app-name": {"type": "string", "description": "Name of the application to rollback"},
-                                        "version": {"type": "string", "description": "Version to rollback to"}
-                                    }
-                                    required = ["app-name", "version"]
-                                elif command == "status":
-                                    properties = {
-                                        "app-name": {"type": "string", "description": "Name of the application"}
-                                    }
-                                    required = ["app-name"]
-                                elif command == "workflow-command":
-                                    properties = {
-                                        "param": {"type": "string", "description": "Parameter for workflow"}
-                                    }
-                                    required = ["param"]
-                                elif command == "test-command":
-                                    properties = {}
-                                    required = []
-                                elif command == "error-command":
-                                    properties = {}
-                                    required = []
-                                elif command == "concurrent-command":
-                                    properties = {}
-                                    required = []
-                                if properties is not None:
-                                    tool_name = f"{plugin_name}.{command}"
-                                    tools.append({
-                                        "name": tool_name,
-                                        "description": f"{plugin_name} {command} command",
-                                        "inputSchema": {
-                                            "type": "object",
-                                            "properties": properties,
-                                            "required": required
-                                        }
-                                    })
-                                    logger.info(f"Added tool: {tool_name}")
-        except Exception as e:
-            logger.error(f"Error building tool manifest for {plugin_name}: {e}")
-    
-    return tools
-
-
-async def process_mcp_message(message: Dict[str, Any], session_id: str) -> Optional[Dict[str, Any]]:
-    """Process MCP protocol messages."""
+def get_plugin_help(plugin_name: str, cli_path: str) -> str:
+    """Get help output from a plugin CLI."""
     try:
-        # Validate JSON-RPC 2.0 format
-        if not isinstance(message, dict):
-            return {
-                "jsonrpc": "2.0",
-                "error": {
-                    "code": -32600,
-                    "message": "Invalid Request"
-                },
-                "id": None
-            }
+        result = subprocess.run(
+            [sys.executable, cli_path, "--help"],
+            capture_output=True,
+            text=True,
+            timeout=10
+        )
         
-        jsonrpc = message.get("jsonrpc")
-        request_id = message.get("id")
-        method = message.get("method")
-        params = message.get("params", {})
-        
-        if jsonrpc != "2.0":
-            return {
-                "jsonrpc": "2.0",
-                "error": {
-                    "code": -32600,
-                    "message": "Invalid Request: jsonrpc must be '2.0'"
-                },
-                "id": request_id
-            }
-        
-        if method == "initialize":
-            # Handle initialization
-            sessions[session_id]["initialized"] = True
-            return {
-                "jsonrpc": "2.0",
-                "id": request_id,
-                "result": {
-                    "protocolVersion": "2024-11-05",
-                    "capabilities": {
-                        "tools": {}
-                    },
-                    "serverInfo": {
-                        "name": "sanctum-letta-mcp",
-                        "version": "2.2.0"
-                    }
-                }
-            }
-        
-        elif method == "tools/list":
-            # Handle tools list request
-            logger.info(f"Tools list request received for session {session_id}")
-            tools = build_tools_manifest()
-            logger.info(f"Returning {len(tools)} tools")
-            return {
-                "jsonrpc": "2.0",
-                "id": request_id,
-                "result": {"tools": tools}
-            }
-        
-        elif method == "tools/call":
-            # Handle tool invocation
-            tool_name = params.get("name")
-            arguments = params.get("arguments", {})
-            
-            if not tool_name:
-                return {
-                    "jsonrpc": "2.0",
-                    "error": {
-                        "code": -32602,
-                        "message": "Invalid params: missing tool name"
-                    },
-                    "id": request_id
-                }
-            
-            # Execute the tool
-            result = await execute_plugin_tool(tool_name, arguments)
-            
-            if "error" in result:
-                return {
-                    "jsonrpc": "2.0",
-                    "error": {
-                        "code": -32603,
-                        "message": result["error"]
-                    },
-                    "id": request_id
-                }
-            else:
-                return {
-                    "jsonrpc": "2.0",
-                    "result": {
-                        "content": [
-                            {
-                                "type": "text",
-                                "text": str(result["result"])
-                            }
-                        ]
-                    },
-                    "id": request_id
-                }
-        
+        if result.returncode == 0:
+            return result.stdout
         else:
-            return {
-                "jsonrpc": "2.0",
-                "error": {
-                    "code": -32601,
-                    "message": f"Method not found: {method}"
-                },
-                "id": request_id
-            }
-            
+            logger.error(f"Plugin {plugin_name} help command failed: {result.stderr}")
+            return ""
     except Exception as e:
-        logger.error(f"Error processing MCP message: {e}")
-        return {
-            "jsonrpc": "2.0",
-            "error": {
-                "code": -32603,
-                "message": "Internal error"
-            },
-            "id": message.get("id") if isinstance(message, dict) else None
-        }
+        logger.error(f"Error getting help for plugin {plugin_name}: {e}")
+        return ""
 
 
-async def execute_plugin_tool(tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
-    """Execute a plugin tool command."""
+async def execute_plugin_tool(tool_name: str, arguments: Dict[str, Any], ctx: Context) -> Dict[str, Any]:
+    """Execute a plugin tool."""
     try:
-        # Parse tool name: plugin.command
+        # Parse tool name to get plugin and command
         if '.' not in tool_name:
-            return {"error": f"Invalid tool name format: {tool_name}"}
+            return {"error": f"Invalid tool name format: {tool_name}. Expected 'plugin.command'"}
         
         plugin_name, command = tool_name.split('.', 1)
         
         if plugin_name not in plugin_registry:
-            return {"error": f"Plugin not found: {plugin_name}"}
+            return {"error": f"Plugin '{plugin_name}' not found"}
         
-        cli_path = plugin_registry[plugin_name]["path"]
+        plugin_info = plugin_registry[plugin_name]
+        cli_path = plugin_info["path"]
         
         # Build command arguments
-        cmd = [sys.executable, cli_path, command]
+        cmd_args = [sys.executable, cli_path, command]
+        
+        # Add arguments
         for key, value in arguments.items():
-            cmd.extend([f"--{key}", str(value)])
+            if isinstance(value, bool):
+                if value:
+                    cmd_args.append(f"--{key}")
+            else:
+                cmd_args.extend([f"--{key}", str(value)])
         
-        logger.info(f"Executing plugin command: {' '.join(cmd)}")
+        logger.info(f"Executing plugin command: {' '.join(cmd_args)}")
+        await ctx.info(f"Executing: {' '.join(cmd_args)}")
         
-        # Execute the plugin
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            timeout=60  # 60 second timeout
+        # Execute the command
+        process = await asyncio.create_subprocess_exec(
+            *cmd_args,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
         )
         
-        if result.returncode == 0:
-            try:
-                plugin_result = json.loads(result.stdout.strip())
-                if "error" in plugin_result:
-                    return {"error": plugin_result["error"]}
-                else:
-                    return {"result": plugin_result.get("result", plugin_result)}
-            except json.JSONDecodeError:
-                return {"result": result.stdout.strip()}
+        stdout, stderr = await process.communicate()
+        
+        if process.returncode == 0:
+            result = stdout.decode().strip()
+            await ctx.info(f"Command completed successfully: {result}")
+            return {"result": result}
         else:
-            return {"error": result.stderr.strip() or "Plugin execution failed"}
+            error_msg = stderr.decode().strip()
+            await ctx.error(f"Command failed: {error_msg}")
+            return {"error": error_msg}
             
-    except subprocess.TimeoutExpired:
-        return {"error": "Plugin execution timed out"}
     except Exception as e:
-        logger.error(f"Error executing plugin tool {tool_name}: {e}")
-        return {"error": str(e)}
+        error_msg = f"Error executing tool {tool_name}: {e}"
+        logger.error(error_msg)
+        await ctx.error(error_msg)
+        return {"error": error_msg}
 
 
-async def sse_handler(request: Request) -> StreamResponse:
-    """Handle SSE connections for MCP protocol."""
-    session_id = str(uuid.uuid4())
+def create_tool_from_plugin(plugin_name: str, command: str, cli_path: str) -> None:
+    """Create a tool from a plugin command and register it with FastMCP."""
     
-    # Create session
-    sessions[session_id] = {
-        "id": session_id,
-        "created": asyncio.get_event_loop().time(),
-        "response": None,
-        "initialized": False
-    }
+    # Get help to determine parameters
+    help_text = get_plugin_help(plugin_name, cli_path)
     
-    logger.info(f"New SSE connection established: {session_id}")
+    # Define tool properties based on command
+    properties = {}
+    required = []
     
-    # Create SSE response
-    response = StreamResponse(
-        status=200,
-        headers={
-            'Content-Type': 'text/event-stream',
-            'Cache-Control': 'no-cache',
-            'Connection': 'keep-alive',
-            'Access-Control-Allow-Origin': '*',
-            'Access-Control-Allow-Headers': 'Content-Type, Authorization'
+    if command == "click-button":
+        properties = {
+            "button-text": {"type": "string", "description": "Text of the button to click"},
+            "msg-id": {"type": "integer", "description": "Message ID containing the button"}
         }
-    )
+        required = ["button-text", "msg-id"]
+    elif command == "send-message":
+        properties = {
+            "message": {"type": "string", "description": "Message to send"}
+        }
+        required = ["message"]
+    elif command == "deploy":
+        properties = {
+            "app-name": {"type": "string", "description": "Name of the application to deploy"},
+            "environment": {"type": "string", "description": "Deployment environment", "default": "production"}
+        }
+        required = ["app-name"]
+    elif command == "rollback":
+        properties = {
+            "app-name": {"type": "string", "description": "Name of the application to rollback"},
+            "version": {"type": "string", "description": "Version to rollback to"}
+        }
+        required = ["app-name", "version"]
+    elif command == "status":
+        properties = {
+            "app-name": {"type": "string", "description": "Name of the application"}
+        }
+        required = ["app-name"]
+    elif command == "workflow-command":
+        properties = {
+            "param": {"type": "string", "description": "Parameter for workflow"}
+        }
+        required = ["param"]
+    elif command == "test-command":
+        properties = {}
+        required = []
+    elif command == "error-command":
+        properties = {}
+        required = []
+    elif command == "concurrent-command":
+        properties = {}
+        required = []
     
-    await response.prepare(request)
-    sessions[session_id]["response"] = response
-    
-    try:
-        logger.info(f"SSE connection ready for session {session_id} - keeping connection alive")
+    if properties is not None:
+        tool_name = f"{plugin_name}.{command}"
         
-        # Keep the connection alive indefinitely
-        # The client will close the connection when done
-        while True:
-            await asyncio.sleep(1)
-            # The connection will be closed by the client or network issues
-            # We just keep it alive until an exception occurs
-                
-    except Exception as e:
-        logger.error(f"Error in SSE connection {session_id}: {e}")
-    finally:
-        # Cleanup session
-        if session_id in sessions:
-            del sessions[session_id]
-        logger.info(f"SSE connection closed: {session_id}")
-    
-    return response
-
-
-async def message_handler(request: Request) -> Response:
-    """Handle MCP message requests (tool invocations)."""
-    logger.info(f"Message endpoint called with method: {request.method}")
-    logger.info(f"Message endpoint headers: {dict(request.headers)}")
-    
-    try:
-        body = await request.json()
-        logger.info(f"Message endpoint received body: {json.dumps(body, indent=2)}")
-        
-        # Validate JSON-RPC 2.0 format
-        if not isinstance(body, dict):
-            return web.json_response({
-                "jsonrpc": "2.0",
-                "error": {
-                    "code": -32600,
-                    "message": "Invalid Request"
-                },
-                "id": None
-            })
-        
-        jsonrpc = body.get("jsonrpc")
-        request_id = body.get("id")
-        method = body.get("method")
-        params = body.get("params", {})
-        
-        if jsonrpc != "2.0":
-            return web.json_response({
-                "jsonrpc": "2.0",
-                "error": {
-                    "code": -32600,
-                    "message": "Invalid Request: jsonrpc must be '2.0'"
-                },
-                "id": request_id
-            })
-        
-        if method == "initialize":
-            # Handle initialization
-            return web.json_response({
-                "jsonrpc": "2.0",
-                "id": request_id,
-                "result": {
-                    "protocolVersion": "2024-11-05",
-                    "capabilities": {
-                        "tools": {}
-                    },
-                    "serverInfo": {
-                        "name": "sanctum-letta-mcp",
-                        "version": "2.2.0"
-                    }
-                }
-            })
-        
-        elif method == "tools/list":
-            # Handle tools list request
-            logger.info(f"Tools list request received for session {request_id}")
-            tools = build_tools_manifest()
-            logger.info(f"Returning {len(tools)} tools")
-            return web.json_response({
-                "jsonrpc": "2.0",
-                "id": request_id,
-                "result": {"tools": tools}
-            })
-        
-        elif method == "tools/call":
-            # Handle tool invocation
-            tool_name = params.get("name")
-            arguments = params.get("arguments", {})
-            
-            if not tool_name:
-                return web.json_response({
-                    "jsonrpc": "2.0",
-                    "error": {
-                        "code": -32602,
-                        "message": "Invalid params: missing tool name"
-                    },
-                    "id": request_id
-                })
-            
-            # Execute the tool
-            result = await execute_plugin_tool(tool_name, arguments)
+        @server.tool(
+            name=tool_name,
+            description=f"{plugin_name} {command} command",
+            annotations=ToolAnnotations(
+                title=f"{plugin_name.title()} {command.replace('-', ' ').title()}",
+                readOnlyHint=False,
+                destructiveHint=True,
+                idempotentHint=False,
+                openWorldHint=True
+            )
+        )
+        async def plugin_tool(ctx: Context, **kwargs) -> Sequence[ContentBlock]:
+            """Execute a plugin command."""
+            result = await execute_plugin_tool(tool_name, kwargs, ctx)
             
             if "error" in result:
-                return web.json_response({
-                    "jsonrpc": "2.0",
-                    "error": {
-                        "code": -32603,
-                        "message": result["error"]
-                    },
-                    "id": request_id
-                })
+                await ctx.error(f"Tool execution failed: {result['error']}")
+                return [TextContent(type="text", text=f"Error: {result['error']}")]
             else:
-                return web.json_response({
-                    "jsonrpc": "2.0",
-                    "result": {
-                        "content": [
-                            {
-                                "type": "text",
-                                "text": str(result["result"])
-                            }
-                        ]
-                    },
-                    "id": request_id
-                })
+                return [TextContent(type="text", text=str(result["result"]))]
         
-        else:
-            return web.json_response({
-                "jsonrpc": "2.0",
-                "error": {
-                    "code": -32601,
-                    "message": f"Method not found: {method}"
-                },
-                "id": request_id
-            })
-            
-    except json.JSONDecodeError:
-        return web.json_response({
-            "jsonrpc": "2.0",
-            "error": {
-                "code": -32700,
-                "message": "Parse error"
-            },
-            "id": None
-        })
-    except Exception as e:
-        logger.error(f"Error handling message: {e}")
-        return web.json_response({
-            "jsonrpc": "2.0",
-            "error": {
-                "code": -32603,
-                "message": "Internal error"
-            },
-            "id": body.get("id") if isinstance(body, dict) else None
-        })
+        logger.info(f"Registered tool: {tool_name}")
 
 
-async def health_handler(request: Request) -> Response:
-    """Health check endpoint."""
-    return web.json_response({
-        "status": "healthy",
-        "plugins": len(plugin_registry),
-        "sessions": len(sessions)
-    })
-
-
-async def init_app() -> web.Application:
-    """Initialize the aiohttp application."""
+def register_plugin_tools() -> None:
+    """Register all discovered plugin tools with the FastMCP server."""
     global plugin_registry
-    
-    logger.info("Starting Sanctum Letta MCP Server...")
     
     # Discover plugins
     plugin_registry = discover_plugins()
     logger.info(f"Discovered {len(plugin_registry)} plugins")
     
-    # Create application
-    app = web.Application()
+    # Register tools for each plugin
+    for plugin_name, plugin_info in plugin_registry.items():
+        cli_path = plugin_info["path"]
+        
+        # Get help to extract available commands
+        help_text = get_plugin_help(plugin_name, cli_path)
+        lines = help_text.split('\n')
+        in_commands_section = False
+        
+        for line in lines:
+            if line.strip().startswith("Available commands:"):
+                in_commands_section = True
+                continue
+            if in_commands_section:
+                # End of commands section if we hit an empty line or Examples
+                if not line.strip() or line.strip().startswith("Examples"):
+                    in_commands_section = False
+                    continue
+                if line.startswith('  '):
+                    parts = line.strip().split()
+                    if parts and parts[0] not in ['usage:', 'options:', 'Available', 'Examples:']:
+                        command = parts[0]
+                        create_tool_from_plugin(plugin_name, command, cli_path)
+
+
+# Create FastMCP server instance
+server = FastMCP(
+    name="sanctum-letta-mcp",
+    instructions="A plugin-based MCP server for Sanctum Letta operations",
+    sse_path="/sse",
+    message_path="/messages/",
+    host="0.0.0.0",
+    port=int(os.getenv("MCP_PORT", "8000"))
+)
+
+
+@server.tool(
+    name="health",
+    description="Check server health and plugin status",
+    annotations=ToolAnnotations(
+        title="Health Check",
+        readOnlyHint=True,
+        destructiveHint=False,
+        idempotentHint=True,
+        openWorldHint=False
+    )
+)
+async def health_check(ctx: Context) -> Sequence[ContentBlock]:
+    """Check server health and plugin status."""
+    # Only log if context is available (during actual requests)
+    try:
+        await ctx.info("Health check requested")
+    except ValueError:
+        # Context not available in unit tests, skip logging
+        pass
     
-    # Setup CORS
-    cors = cors_setup(app, defaults={
-        "*": ResourceOptions(
-            allow_credentials=True,
-            expose_headers="*",
-            allow_headers="*",
-            allow_methods="*"
-        )
-    })
+    status = {
+        "status": "healthy",
+        "plugins": len(plugin_registry),
+        "plugin_names": list(plugin_registry.keys())
+    }
     
-    # Add routes
-    app.router.add_get('/mcp/sse', sse_handler)
-    app.router.add_get('/sse', sse_handler)  # Add direct /sse route for Letta compatibility
-    app.router.add_post('/mcp/message', message_handler)
-    app.router.add_post('/message', message_handler)  # Add direct /message route for Letta compatibility
-    app.router.add_get('/health', health_handler)
-    
-    # Apply CORS to all routes
-    for route in list(app.router.routes()):
-        cors.add(route)
-    
-    logger.info("Server startup complete")
-    return app
+    return [TextContent(type="text", text=json.dumps(status, indent=2))]
 
 
 def main():
     """Main entry point."""
-    port = int(os.getenv("MCP_PORT", "8000"))
-    host = os.getenv("MCP_HOST", "0.0.0.0")
+    logger.info("Starting Sanctum Letta MCP Server...")
     
-    logger.info(f"Starting MCP server on {host}:{port}")
+    # Register plugin tools
+    register_plugin_tools()
     
-    web.run_app(init_app(), host=host, port=port, print=lambda _: None)
-
-
-def register_all_tools():
-    pass  # No longer needed; tool registration is handled via manifest and handlers
+    # Run the server with SSE transport
+    logger.info("Starting server with SSE transport...")
+    server.run(transport="sse")
 
 
 if __name__ == "__main__":

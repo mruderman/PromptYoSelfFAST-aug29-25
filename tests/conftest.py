@@ -16,7 +16,7 @@ import pytest_asyncio
 # Add the project root to the path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from smcp.mcp_server import init_app, discover_plugins, build_tools_manifest, execute_plugin_tool
+from smcp.mcp_server import discover_plugins, execute_plugin_tool, server
 
 
 @pytest.fixture
@@ -137,20 +137,18 @@ def temp_plugins_dir_with_plugins(request, temp_plugins_dir):
 
 
 @pytest_asyncio.fixture
-async def app(temp_plugins_dir_with_plugins):
-    """Create a test application instance."""
-    from smcp.mcp_server import init_app
-    return await init_app()
+async def fastmcp_server(temp_plugins_dir_with_plugins):
+    """Create a test FastMCP server instance."""
+    # Import here to avoid circular imports
+    from smcp.mcp_server import server, register_plugin_tools
+    
+    # Register plugin tools for testing
+    register_plugin_tools()
+    
+    return server
 
 
 @pytest_asyncio.fixture
-async def client(app):
-    """Create a test client for the application."""
-    from aiohttp.test_utils import TestServer, TestClient
-    server = TestServer(app)
-    client = TestClient(server)
-    await client.start_server()
-    try:
-        yield client
-    finally:
-        await client.close() 
+async def sse_app(fastmcp_server):
+    """Create a test SSE application instance."""
+    return fastmcp_server.sse_app() 

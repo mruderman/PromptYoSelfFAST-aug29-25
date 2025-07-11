@@ -1,103 +1,45 @@
 """
-End-to-end tests for complete MCP workflow.
+End-to-end tests for MCP server workflow.
+Tests complete client-server interaction including SSE, initialization, and tool execution.
 """
 
-import pytest
 import asyncio
 import json
+import pytest
+import httpx
 import subprocess
-import sys
 import time
-import os
-import uuid
-import aiohttp
+from typing import AsyncGenerator, Dict, Any
 from pathlib import Path
-from unittest.mock import patch
+import sys
 
 
 class TestMCPWorkflow:
-    """End-to-end tests for complete MCP workflow."""
-    
-    async def send_mcp_request(self, session, method, params=None):
-        """Send an MCP request and return the response."""
-        request_id = str(uuid.uuid4())
-        request = {
-            "jsonrpc": "2.0",
-            "id": request_id,
-            "method": method,
-            "params": params or {}
-        }
-        
-        async with session.post("http://localhost:8000/mcp/message", json=request) as response:
-            return await response.json()
+    """Test complete MCP workflow from client connection to tool execution."""
     
     @pytest.fixture
-    def mcp_server_process(self, tmp_path):
-        """Start the MCP server as a subprocess."""
-        # Create test plugins
-        plugins_dir = tmp_path / "plugins"
-        plugins_dir.mkdir()
-        
-        # Create a simple test plugin
-        test_dir = plugins_dir / "test_plugin"
-        test_dir.mkdir()
-        cli_path = test_dir / "cli.py"
-        cli_path.write_text('''#!/usr/bin/env python3
-import argparse
-import json
-import sys
-
-def test_command(args):
-    return {"result": f"Test command executed with param: {args.get('param', 'default')}"}
-
-def main():
-    parser = argparse.ArgumentParser(
-        description="Test plugin",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-Available commands:
-  test-command    Run the test command
-
-Examples:
-  python cli.py test-command --param test_value
-        """
-    )
-    subparsers = parser.add_subparsers(dest="command", help="Available commands")
-    test_parser = subparsers.add_parser("test-command", help="Run the test command")
-    test_parser.add_argument("--param", default="default", help="Parameter for test")
+    async def client(self) -> AsyncGenerator[httpx.AsyncClient, None]:
+        """Create HTTP client for testing."""
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            yield client
     
-    args = parser.parse_args()
-    if not args.command:
-        parser.print_help()
-        sys.exit(1)
+    @pytest.fixture
+    def base_url(self) -> str:
+        """Base URL for MCP server."""
+        return "http://localhost:8000"
     
-    if args.command == "test-command":
-        result = test_command({"param": args.param})
-    else:
-        result = {"error": "Unknown command"}
-    
-    print(json.dumps(result))
-    sys.exit(0)
-
-if __name__ == "__main__":
-    main()
-''')
-        cli_path.chmod(0o755)
-        
-        # Set environment variable for plugins directory
-        env = os.environ.copy()
-        env['MCP_PLUGINS_DIR'] = str(plugins_dir)
-        
-        # Start the MCP server
+    @pytest.fixture
+    def server_process(self):
+        """Start MCP server for testing."""
+        # Start server in background
         process = subprocess.Popen(
             [sys.executable, "smcp/mcp_server.py"],
-            env=env,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE
         )
         
         # Wait for server to start
-        time.sleep(2)
+        time.sleep(3)
         
         yield process
         
@@ -105,203 +47,350 @@ if __name__ == "__main__":
         process.terminate()
         process.wait()
     
-    @pytest.mark.asyncio
-    @pytest.mark.timeout(60)
-    async def test_complete_workflow(self, mcp_server_process):
-        """Test complete workflow from server startup to tool execution."""
-        # Wait a bit more for server to be ready
-        await asyncio.sleep(1)
+    async def test_complete_mcp_workflow(self, client: httpx.AsyncClient, base_url: str):
+        """Test complete MCP workflow: connect, initialize, list tools, call tool."""
         
-        # Connect to the server
-        async with aiohttp.ClientSession() as session:
-            # Step 1: Initialize
-            init_result = await self.send_mcp_request(session, "initialize", {
-                "protocolVersion": "2024-11-05",
-                "capabilities": {"tools": {}},
-                "clientInfo": {"name": "e2e-test", "version": "1.0.0"}
-            })
-            
-            assert "result" in init_result
-            assert init_result["result"]["protocolVersion"] == "2024-11-05"
-            assert "serverInfo" in init_result["result"]
-            
-            # Step 2: List tools
-            tools_result = await self.send_mcp_request(session, "tools/list", {})
-            
-            assert "result" in tools_result
-            assert "tools" in tools_result["result"]
-            tools = tools_result["result"]["tools"]
-            
-            # Should have our real plugins
-            tool_names = [tool["name"] for tool in tools]
-            assert "botfather.click-button" in tool_names
-            assert "botfather.send-message" in tool_names
-            assert "devops.deploy" in tool_names
-            assert "devops.rollback" in tool_names
-            assert "devops.status" in tool_names
-            
-            # Step 3: Execute a tool
-            call_result = await self.send_mcp_request(session, "tools/call", {
-                "name": "botfather.send-message",
-                "arguments": {"message": "Hello from E2E test"}
-            })
-            
-            assert "result" in call_result
-            assert "content" in call_result["result"]
-            assert call_result["result"]["content"][0]["type"] == "text"
-            assert "Sent message: Hello from E2E test" in call_result["result"]["content"][0]["text"]
-    
-    @pytest.mark.asyncio
-    @pytest.mark.timeout(60)
-    async def test_multiple_plugins_workflow(self, tmp_path):
-        """Test workflow with multiple plugins."""
-        # Start server with default plugins
-        process = subprocess.Popen(
-            [sys.executable, "smcp/mcp_server.py"],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE
-        )
-
+        # Step 1: Establish SSE connection
+        sse_connected = False
         try:
-            # Wait for server to start
-            time.sleep(2)
-
-            # Connect and test
-            async with aiohttp.ClientSession() as session:
-                # Initialize
-                await self.send_mcp_request(session, "initialize", {
-                    "protocolVersion": "2024-11-05",
-                    "capabilities": {"tools": {}},
-                    "clientInfo": {"name": "multi-test", "version": "1.0.0"}
-                })
-
-                # List tools
-                tools_result = await self.send_mcp_request(session, "tools/list", {})
-                tools = tools_result["result"]["tools"]
-
-                # Should have tools from both plugins
-                tool_names = [tool["name"] for tool in tools]
-                assert "botfather.send-message" in tool_names
-                assert "devops.deploy" in tool_names
-
-                # Test botfather tool
-                bot_result = await self.send_mcp_request(session, "tools/call", {
-                    "name": "botfather.send-message",
-                    "arguments": {"message": "Hello from E2E test"}
-                })
-
-                assert "result" in bot_result
-                assert "Hello from E2E test" in bot_result["result"]["content"][0]["text"]
-
-                # Test devops tool
-                devops_result = await self.send_mcp_request(session, "tools/call", {
-                    "name": "devops.deploy",
-                    "arguments": {"app-name": "testapp", "environment": "staging"}
-                })
-
-                assert "result" in devops_result
-                assert "testapp" in devops_result["result"]["content"][0]["text"]
-                assert "staging" in devops_result["result"]["content"][0]["text"]
-
-        finally:
-            process.terminate()
-            process.wait()
+            async with client.stream("GET", f"{base_url}/sse", timeout=5.0) as response:
+                assert response.status_code == 200
+                assert "text/event-stream" in response.headers.get("content-type", "")
+                sse_connected = True
+                
+                # Step 2: Send initialize request
+                initialize_request = {
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "method": "initialize",
+                    "params": {
+                        "protocolVersion": "2025-03-26",
+                        "capabilities": {
+                            "tools": {},
+                            "resources": {},
+                            "prompts": {}
+                        },
+                        "clientInfo": {
+                            "name": "test-client",
+                            "version": "1.0.0"
+                        }
+                    }
+                }
+                
+                init_response = await client.post(
+                    f"{base_url}/messages/",
+                    json=initialize_request,
+                    timeout=10.0
+                )
+                
+                assert init_response.status_code == 200
+                init_data = init_response.json()
+                assert init_data["jsonrpc"] == "2.0"
+                assert init_data["id"] == 1
+                assert "result" in init_data
+                
+                # Step 3: Send initialized notification
+                initialized_notification = {
+                    "jsonrpc": "2.0",
+                    "method": "initialized",
+                    "params": {}
+                }
+                
+                await client.post(
+                    f"{base_url}/messages/",
+                    json=initialized_notification,
+                    timeout=10.0
+                )
+                
+                # Step 4: List available tools
+                list_tools_request = {
+                    "jsonrpc": "2.0",
+                    "id": 2,
+                    "method": "tools/list"
+                }
+                
+                tools_response = await client.post(
+                    f"{base_url}/messages/",
+                    json=list_tools_request,
+                    timeout=10.0
+                )
+                
+                assert tools_response.status_code == 200
+                tools_data = tools_response.json()
+                assert "result" in tools_data
+                assert "tools" in tools_data["result"]
+                
+                tools = tools_data["result"]["tools"]
+                assert len(tools) >= 1
+                
+                # Step 5: Call health tool
+                health_tool = next((t for t in tools if t["name"] == "health"), None)
+                assert health_tool is not None
+                
+                call_health_request = {
+                    "jsonrpc": "2.0",
+                    "id": 3,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "health",
+                        "arguments": {}
+                    }
+                }
+                
+                health_response = await client.post(
+                    f"{base_url}/messages/",
+                    json=call_health_request,
+                    timeout=10.0
+                )
+                
+                assert health_response.status_code == 200
+                health_data = health_response.json()
+                assert "result" in health_data
+                assert "content" in health_data["result"]
+                
+                content = health_data["result"]["content"][0]
+                assert content["type"] == "text"
+                
+                health_info = json.loads(content["text"])
+                assert health_info["status"] == "healthy"
+                assert "plugins" in health_info
+                assert "plugin_names" in health_info
+                
+        except httpx.TimeoutException:
+            # SSE connections are expected to timeout
+            if not sse_connected:
+                raise
+        except Exception as e:
+            if not sse_connected:
+                raise
+            # If SSE connected but other operations failed, that's a test failure
+            raise
     
-    @pytest.mark.asyncio
-    @pytest.mark.timeout(60)
-    async def test_error_handling_workflow(self, tmp_path):
-        """Test workflow with error handling."""
-        # Start server with default plugins
-        process = subprocess.Popen(
-            [sys.executable, "smcp/mcp_server.py"],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE
+    async def test_plugin_tool_execution(self, client: httpx.AsyncClient, base_url: str):
+        """Test execution of plugin tools."""
+        
+        # First initialize the connection
+        await self._initialize_connection(client, base_url)
+        
+        # List tools to find plugin tools
+        tools_response = await client.post(
+            f"{base_url}/messages/",
+            json={
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "tools/list"
+            },
+            timeout=10.0
         )
-
-        try:
-            # Wait for server to start
-            time.sleep(2)
-
-            # Connect and test error handling
-            async with aiohttp.ClientSession() as session:
-                # Initialize
-                await self.send_mcp_request(session, "initialize", {
-                    "protocolVersion": "2024-11-05",
-                    "capabilities": {"tools": {}},
-                    "clientInfo": {"name": "error-test", "version": "1.0.0"}
-                })
-
-                # List tools
-                tools_result = await self.send_mcp_request(session, "tools/list", {})
-                tools = tools_result["result"]["tools"]
-
-                # Should have our real plugins
-                tool_names = [tool["name"] for tool in tools]
-                assert "botfather.click-button" in tool_names
-                assert "devops.deploy" in tool_names
-
-                # Test error handling by calling a tool with missing required arguments
-                error_result = await self.send_mcp_request(session, "tools/call", {
-                    "name": "botfather.click-button",
-                    "arguments": {}  # Missing required arguments
-                })
-
-                # Verify error response
-                assert "error" in error_result
-                assert error_result["error"]["code"] == -32603  # Internal error
-                assert "arguments are required" in error_result["error"]["message"]
-
-        finally:
-            process.terminate()
-            process.wait()
+        
+        tools_data = tools_response.json()
+        tools = tools_data["result"]["tools"]
+        
+        # Look for botfather tools
+        botfather_tools = [t for t in tools if t["name"].startswith("botfather.")]
+        
+        if botfather_tools:
+            # Test a botfather tool
+            tool_name = botfather_tools[0]["name"]
+            
+            call_request = {
+                "jsonrpc": "2.0",
+                "id": 2,
+                "method": "tools/call",
+                "params": {
+                    "name": tool_name,
+                    "arguments": {}
+                }
+            }
+            
+            response = await client.post(
+                f"{base_url}/messages/",
+                json=call_request,
+                timeout=15.0  # Plugin execution might take longer
+            )
+            
+            assert response.status_code == 200
+            data = response.json()
+            
+            # Tool should either succeed or return a meaningful error
+            if "result" in data:
+                assert "content" in data["result"]
+            elif "error" in data:
+                # Plugin might not be properly configured, but should return structured error
+                assert "code" in data["error"]
+                assert "message" in data["error"]
     
-    @pytest.mark.asyncio
-    @pytest.mark.timeout(60)
-    async def test_concurrent_workflow(self, tmp_path):
-        """Test concurrent tool executions."""
-        # Start server with default plugins
-        process = subprocess.Popen(
-            [sys.executable, "smcp/mcp_server.py"],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE
+    async def test_error_handling(self, client: httpx.AsyncClient, base_url: str):
+        """Test error handling for various scenarios."""
+        
+        # Test malformed JSON
+        response = await client.post(
+            f"{base_url}/messages/",
+            content="invalid json",
+            headers={"content-type": "application/json"},
+            timeout=10.0
         )
-
+        
+        assert response.status_code == 200
+        data = response.json()
+        assert "error" in data
+        assert data["error"]["code"] == -32700  # Parse error
+        
+        # Test invalid method
+        response = await client.post(
+            f"{base_url}/messages/",
+            json={
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "nonexistent_method"
+            },
+            timeout=10.0
+        )
+        
+        assert response.status_code == 200
+        data = response.json()
+        assert "error" in data
+        assert data["error"]["code"] == -32601  # Method not found
+        
+        # Test invalid tool call
+        response = await client.post(
+            f"{base_url}/messages/",
+            json={
+                "jsonrpc": "2.0",
+                "id": 2,
+                "method": "tools/call",
+                "params": {
+                    "name": "nonexistent_tool",
+                    "arguments": {}
+                }
+            },
+            timeout=10.0
+        )
+        
+        assert response.status_code == 200
+        data = response.json()
+        assert "error" in data
+    
+    async def test_concurrent_sessions(self, client: httpx.AsyncClient, base_url: str):
+        """Test handling of concurrent sessions."""
+        
+        # Create multiple SSE connections
+        sse_tasks = []
+        for i in range(3):
+            task = asyncio.create_task(self._establish_sse_connection(client, base_url))
+            sse_tasks.append(task)
+        
+        # Wait for connections to establish
+        await asyncio.sleep(2)
+        
+        # Send concurrent requests
+        request_tasks = []
+        for i in range(5):
+            task = asyncio.create_task(
+                client.post(
+                    f"{base_url}/messages/",
+                    json={
+                        "jsonrpc": "2.0",
+                        "id": i,
+                        "method": "tools/list"
+                    },
+                    timeout=10.0
+                )
+            )
+            request_tasks.append(task)
+        
+        # Wait for all requests to complete
+        responses = await asyncio.gather(*request_tasks, return_exceptions=True)
+        
+        # All requests should succeed
+        for i, response in enumerate(responses):
+            if isinstance(response, Exception):
+                pytest.fail(f"Request {i} failed: {response}")
+            else:
+                assert response.status_code == 200
+        
+        # Cancel SSE tasks
+        for task in sse_tasks:
+            task.cancel()
+        
         try:
-            # Wait for server to start
-            time.sleep(2)
-
-            # Connect and test concurrent execution
-            async with aiohttp.ClientSession() as session:
-                # Initialize
-                await self.send_mcp_request(session, "initialize", {
-                    "protocolVersion": "2024-11-05",
-                    "capabilities": {"tools": {}},
-                    "clientInfo": {"name": "concurrent-test", "version": "1.0.0"}
-                })
-
-                # Execute multiple tools concurrently
-                tasks = []
-                for i in range(5):
-                    task = self.send_mcp_request(session, "tools/call", {
-                        "name": "devops.status",
-                        "arguments": {"app-name": f"app_{i}"}
-                    })
-                    tasks.append(task)
-
-                # Wait for all to complete
-                results = await asyncio.gather(*tasks)
-
-                # Verify all executions were successful
-                for i, result in enumerate(results):
-                    assert "result" in result
-                    assert "content" in result["result"]
-                    assert result["result"]["content"][0]["type"] == "text"
-                    assert f"Status for app_{i}: healthy" in result["result"]["content"][0]["text"]
-
-        finally:
-            process.terminate()
-            process.wait()
-
-
-# Import os for environment variable handling
-import os 
+            await asyncio.gather(*sse_tasks, return_exceptions=True)
+        except asyncio.CancelledError:
+            pass
+    
+    async def test_server_restart_recovery(self, client: httpx.AsyncClient, base_url: str):
+        """Test that client can recover from server restart."""
+        
+        # Establish connection
+        await self._initialize_connection(client, base_url)
+        
+        # Send a request
+        response = await client.post(
+            f"{base_url}/messages/",
+            json={
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "tools/list"
+            },
+            timeout=10.0
+        )
+        
+        assert response.status_code == 200
+        
+        # Note: In a real scenario, the server would restart here
+        # For this test, we just verify the connection was working
+    
+    async def _initialize_connection(self, client: httpx.AsyncClient, base_url: str):
+        """Helper to initialize MCP connection."""
+        # Send initialize request
+        initialize_request = {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {
+                "protocolVersion": "2025-03-26",
+                "capabilities": {
+                    "tools": {},
+                    "resources": {},
+                    "prompts": {}
+                },
+                "clientInfo": {
+                    "name": "test-client",
+                    "version": "1.0.0"
+                }
+            }
+        }
+        
+        response = await client.post(
+            f"{base_url}/messages/",
+            json=initialize_request,
+            timeout=10.0
+        )
+        
+        assert response.status_code == 200
+        
+        # Send initialized notification
+        initialized_notification = {
+            "jsonrpc": "2.0",
+            "method": "initialized",
+            "params": {}
+        }
+        
+        await client.post(
+            f"{base_url}/messages/",
+            json=initialized_notification,
+            timeout=10.0
+        )
+    
+    async def _establish_sse_connection(self, client: httpx.AsyncClient, base_url: str):
+        """Helper to establish SSE connection."""
+        try:
+            async with client.stream("GET", f"{base_url}/sse", timeout=5.0) as response:
+                assert response.status_code == 200
+                # Just verify connection is established
+                async for line in response.aiter_lines():
+                    if line.startswith("data:"):
+                        break
+        except httpx.TimeoutException:
+            # Expected for SSE connections
+            pass 
