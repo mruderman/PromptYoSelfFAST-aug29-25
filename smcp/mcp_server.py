@@ -301,7 +301,8 @@ def parse_arguments():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  python smcp/mcp_server.py                    # Run with localhost-only (default)
+  python smcp/mcp_server.py                    # Run with localhost + Docker containers (default)
+  python smcp/mcp_server.py --host 127.0.0.1   # Localhost-only (more restrictive)
   python smcp/mcp_server.py --allow-external   # Allow external connections
   python smcp/mcp_server.py --port 9000        # Run on custom port
         """
@@ -310,7 +311,7 @@ Examples:
     parser.add_argument(
         "--allow-external",
         action="store_true",
-        help="Allow external connections (default: localhost only)"
+        help="Allow external connections (default: localhost + Docker containers)"
     )
     
     parser.add_argument(
@@ -324,7 +325,7 @@ Examples:
         "--host",
         type=str,
         default=None,
-        help="Host to bind to (default: 127.0.0.1 for localhost-only, 0.0.0.0 for external)"
+        help="Host to bind to (default: 0.0.0.0 for localhost + Docker, 127.0.0.1 for localhost-only)"
     )
     
     return parser.parse_args()
@@ -341,8 +342,9 @@ def main():
         host = "0.0.0.0"
         logger.warning("⚠️  WARNING: External connections are allowed. This may pose security risks.")
     else:
-        host = "127.0.0.1"
-        logger.info("🔒 Security: Server bound to localhost only. Use --allow-external to allow external connections.")
+        # Default: Bind to 0.0.0.0 to allow localhost + Docker containers
+        host = "0.0.0.0"
+        logger.info("🔒 Security: Server bound to all interfaces (localhost + Docker containers). Use --host 127.0.0.1 for localhost-only.")
     
     logger.info(f"Starting Sanctum Letta MCP Server on {host}:{args.port}...")
     

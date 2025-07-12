@@ -47,11 +47,16 @@ A powerful, plugin-based Model Context Protocol (MCP) server for the Sanctum Let
    python smcp/mcp_server.py
    ```
 
-The server will start on `http://localhost:8000` by default with **localhost-only access** for security.
+The server will start on `http://localhost:8000` by default with **localhost + Docker container access** for development environments.
 
 ### Security Features
 
-By default, the server only accepts connections from `localhost` (127.0.0.1) to ensure it can only be accessed from the same machine where Letta is running. This prevents unauthorized external access.
+By default, the server binds to all interfaces (0.0.0.0) to allow connections from both the local machine and Docker containers running on the same host. This is ideal for development environments where Docker containers need to communicate with the MCP server.
+
+**For localhost-only access** (more restrictive):
+```bash
+python smcp/mcp_server.py --host 127.0.0.1
+```
 
 **To allow external connections** (use with caution):
 ```bash
@@ -76,11 +81,22 @@ python smcp/mcp_server.py --host 0.0.0.0 --port 8000
 |----------|---------|-------------|
 | `MCP_PORT` | `8000` | Port for the MCP server |
 | `MCP_PLUGINS_DIR` | `smcp/plugins/` | Directory containing plugins |
+| `MCP_HOST` | `0.0.0.0` | Host to bind to (default: all interfaces for Docker compatibility) |
 
 ### Example Configuration
 
 ```bash
+# Default: localhost + Docker containers
+python smcp/mcp_server.py
+
+# Custom port
 export MCP_PORT=9000
+python smcp/mcp_server.py
+
+# Localhost-only (more restrictive)
+python smcp/mcp_server.py --host 127.0.0.1
+
+# Custom plugins directory
 export MCP_PLUGINS_DIR=/path/to/custom/plugins
 python smcp/mcp_server.py
 ```
