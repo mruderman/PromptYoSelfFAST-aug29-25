@@ -27,7 +27,7 @@ A powerful, plugin-based Model Context Protocol (MCP) server for the Sanctum Let
 
 1. **Clone the repository**
    ```bash
-   git clone https://github.com/markrizzn/sanctum-letta-mcp.git
+   git clone https://github.com/actuallyrizzn/sanctum-letta-mcp.git
    cd sanctum-letta-mcp
    ```
 
@@ -366,15 +366,16 @@ This project is licensed under the Creative Commons Attribution-ShareAlike 4.0 I
 
 - [Model Context Protocol](https://modelcontextprotocol.io/) for the protocol specification
 - [FastMCP](https://github.com/microsoft/fastmcp) for the server framework
-- The Sanctum Letta team for the AI framework integration
+- The Sanctum team for the AI framework integration
+- The Letta team for the kernel for SanctumOS
 
 ## 📞 Support
 
 For support, questions, or contributions:
 
 - **Author**: Mark Rizzn Hopkins
-- **Repository**: https://github.com/markrizzn/sanctum-letta-mcp
-- **Issues**: https://github.com/markrizzn/sanctum-letta-mcp/issues
+- **Repository**: https://github.com/actuallyrizzn/sanctum-letta-mcp
+- **Issues**: https://github.com/actuallyrizzn/sanctum-letta-mcp/issues
 
 ---
 

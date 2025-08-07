@@ -795,7 +795,7 @@ logging.getLogger('letta.services.mcp').setLevel(logging.DEBUG)
 - [Model Context Protocol Specification](https://modelcontextprotocol.io/)
 - [JSON-RPC 2.0 Specification](https://www.jsonrpc.org/specification)
 - [Server-Sent Events Specification](https://html.spec.whatwg.org/multipage/server-sent-events.html)
-- [Letta Documentation](https://github.com/your-org/letta)
+- [Letta Documentation](https://github.com/actuallyrizzn/letta)
 
 ---
 
