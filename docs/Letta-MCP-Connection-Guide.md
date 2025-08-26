@@ -23,6 +23,62 @@ Letta uses the official MCP library which expects **JSON-RPC 2.0 over SSE** for 
 8. [Testing and Debugging](#testing-and-debugging)
 9. [Troubleshooting](#troubleshooting)
 
+## New: Using the PromptYoSelf FastMCP Server (Recommended)
+
+This repository now includes a FastMCP-based server that exposes the PromptYoSelf plugin directly as MCP tools. You can connect via STDIO (local) or HTTP/SSE (remote). See [promptyoself_mcp_server.py](promptyoself_mcp_server.py:1) and [README_FASTMCP.md](README_FASTMCP.md:1) for details.
+
+Supported tools (namespaced by the server):
+- promptyoself_register
+- promptyoself_list
+- promptyoself_cancel
+- promptyoself_execute
+- promptyoself_test
+- promptyoself_agents
+- promptyoself_upload
+- health
+
+Environment variables:
+- LETTA_BASE_URL (default http://localhost:8283)
+- LETTA_API_KEY or LETTA_SERVER_PASSWORD (auth)
+- PROMPTYOSELF_DB (defaults to promptyoself.db)
+
+### Connect via STDIO (Local)
+
+Run the server (stdio default):
+```bash
+python promptyoself_mcp_server.py
+```
+
+Letta configuration (STDIO):
+- Command: `python`
+- Args: `["promptyoself_mcp_server.py"]`
+- Env (optional): `{ "LETTA_BASE_URL": "http://localhost:8283", "LETTA_SERVER_PASSWORD": "..." }`
+
+### Connect via HTTP (Remote or local network)
+
+Run the server (HTTP):
+```bash
+python promptyoself_mcp_server.py --transport http --host 127.0.0.1 --port 8000 --path /mcp
+```
+
+Letta configuration (HTTP/streamable-http):
+- Type: `http` or `streamable_http` (depending on client support)
+- Server URL: `http://127.0.0.1:8000/mcp`
+- Headers (optional): `Authorization: Bearer <token>` or custom headers if needed
+
+### Connect via SSE (Legacy/Optional)
+
+Run the server (SSE):
+```bash
+python promptyoself_mcp_server.py --transport sse --host 127.0.0.1 --port 8000
+```
+
+Letta configuration (SSE):
+- Type: `sse`
+- Server URL: `http://127.0.0.1:8000/sse` (SSE path is provided by the server)
+- Headers (optional): as required by your deployment
+
+Note: HTTP is generally preferred over SSE for new deployments due to better bidirectional capabilities. STDIO is ideal for local/embedded agent use.
 ## Overview
 
 Letta supports three types of MCP server connections:

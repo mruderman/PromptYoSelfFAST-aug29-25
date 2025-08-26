@@ -1,3 +1,4 @@
+&gt; Project Direction Update (2025-08-26): This repository now uses a FastMCP-based server that exposes the PromptYoSelf plugin directly as MCP tools. The legacy Sanctum HTTP/SSE server is archived under `archive/sanctum/`. See the new server [promptyoself_mcp_server.py](promptyoself_mcp_server.py:1) and documentation [README_FASTMCP.md](README_FASTMCP.md:1) and [docs/promptyoself-tools.md](docs/promptyoself-tools.md:1). The remaining content below documents a prior STDIO orchestration design and is retained for historical context.
 # MCP (Master Control Program) — Internal Tools Orchestration Daemon (STDIO Edition)
 
 ## Overview

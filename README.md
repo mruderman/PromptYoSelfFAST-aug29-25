@@ -1,3 +1,25 @@
+&gt; NOTE: This project now uses a FastMCP-based server that exposes the PromptYoSelf plugin directly. The legacy Sanctum HTTP/SSE server has been archived under `archive/sanctum/`. See the new quick start and docs below.
+
+# New: PromptYoSelf FastMCP Server (Recommended)
+- Server file: [promptyoself_mcp_server.py](promptyoself_mcp_server.py:1)
+- Full guide: [README_FASTMCP.md](README_FASTMCP.md:1)
+- API reference: [docs/promptyoself-tools.md](docs/promptyoself-tools.md:1)
+
+Quick start:
+```bash
+# install server + test deps
+pip install -r requirements.txt
+# install PromptYoSelf plugin deps
+pip install -r smcp/plugins/promptyoself/requirements.txt
+
+# run in stdio (best for local agents)
+python promptyoself_mcp_server.py
+
+# or run over HTTP
+python promptyoself_mcp_server.py --transport http --host 127.0.0.1 --port 8000 --path /mcp
+```
+
+---
 # Sanctum Letta MCP Server
 
 [![License: CC BY-SA 4.0](https://img.shields.io/badge/License-CC%20BY--SA%204.0-lightgrey.svg)](https://creativecommons.org/licenses/by-sa/4.0/)

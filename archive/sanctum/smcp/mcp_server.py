@@ -263,6 +263,24 @@ def create_server(host: str, port: int) -> FastMCP:
 server = None
 
 
+async def health_check(ctx: Context) -> Sequence[ContentBlock]:
+    """Check server health and plugin status."""
+    # Only log if context is available (during actual requests)
+    try:
+        await ctx.info("Health check requested")
+    except ValueError:
+        # Context not available in unit tests, skip logging
+        pass
+    
+    status = {
+        "status": "healthy",
+        "plugins": len(plugin_registry),
+        "plugin_names": list(plugin_registry.keys())
+    }
+    
+    return [TextContent(type="text", text=json.dumps(status, indent=2))]
+
+
 def create_health_tool(server_instance: FastMCP):
     """Create the health check tool."""
     @server_instance.tool(
@@ -276,22 +294,9 @@ def create_health_tool(server_instance: FastMCP):
             openWorldHint=False
         )
     )
-    async def health_check(ctx: Context) -> Sequence[ContentBlock]:
-        """Check server health and plugin status."""
-        # Only log if context is available (during actual requests)
-        try:
-            await ctx.info("Health check requested")
-        except ValueError:
-            # Context not available in unit tests, skip logging
-            pass
-        
-        status = {
-            "status": "healthy",
-            "plugins": len(plugin_registry),
-            "plugin_names": list(plugin_registry.keys())
-        }
-        
-        return [TextContent(type="text", text=json.dumps(status, indent=2))]
+    async def health_tool(ctx: Context) -> Sequence[ContentBlock]:
+        """Health check tool wrapper."""
+        return await health_check(ctx)
 
 
 def parse_arguments():

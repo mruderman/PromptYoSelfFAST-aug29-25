@@ -1,0 +1,22 @@
+# PromptYoSelf MCP Plugin Dependencies
+# Core dependencies for the PromptYoSelf Sanctum MCP plugin
+
+# Date and time handling
+python-dateutil>=2.9.0
+croniter>=6.0.0
+pytz>=2025.2
+
+# Database
+sqlalchemy>=2.0.43
+
+# HTTP requests
+requests>=2.32.0
+
+# Background job scheduling
+apscheduler>=3.11.0
+
+# Letta integration
+letta-client>=0.1.277
+
+# Timezone handling
+tzlocal>=5.3.0

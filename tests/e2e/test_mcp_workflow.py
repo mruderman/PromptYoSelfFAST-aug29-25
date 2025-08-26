@@ -6,6 +6,7 @@ Tests complete client-server interaction including SSE, initialization, and tool
 import asyncio
 import json
 import pytest
+import pytest_asyncio
 import httpx
 import subprocess
 import time
@@ -17,7 +18,7 @@ import sys
 class TestMCPWorkflow:
     """Test complete MCP workflow from client connection to tool execution."""
     
-    @pytest.fixture
+    @pytest_asyncio.fixture
     async def client(self) -> AsyncGenerator[httpx.AsyncClient, None]:
         """Create HTTP client for testing."""
         async with httpx.AsyncClient(timeout=30.0) as client:
@@ -47,6 +48,7 @@ class TestMCPWorkflow:
         process.terminate()
         process.wait()
     
+    @pytest.mark.asyncio
     async def test_complete_mcp_workflow(self, client: httpx.AsyncClient, base_url: str):
         """Test complete MCP workflow: connect, initialize, list tools, call tool."""
         
@@ -166,6 +168,7 @@ class TestMCPWorkflow:
             # If SSE connected but other operations failed, that's a test failure
             raise
     
+    @pytest.mark.asyncio
     async def test_plugin_tool_execution(self, client: httpx.AsyncClient, base_url: str):
         """Test execution of plugin tools."""
         
@@ -220,6 +223,7 @@ class TestMCPWorkflow:
                 assert "code" in data["error"]
                 assert "message" in data["error"]
     
+    @pytest.mark.asyncio
     async def test_error_handling(self, client: httpx.AsyncClient, base_url: str):
         """Test error handling for various scenarios."""
         
@@ -271,6 +275,7 @@ class TestMCPWorkflow:
         data = response.json()
         assert "error" in data
     
+    @pytest.mark.asyncio
     async def test_concurrent_sessions(self, client: httpx.AsyncClient, base_url: str):
         """Test handling of concurrent sessions."""
         
@@ -318,6 +323,7 @@ class TestMCPWorkflow:
         except asyncio.CancelledError:
             pass
     
+    @pytest.mark.asyncio
     async def test_server_restart_recovery(self, client: httpx.AsyncClient, base_url: str):
         """Test that client can recover from server restart."""
         

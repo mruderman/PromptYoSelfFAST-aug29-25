@@ -6,6 +6,7 @@ Tests the full MCP protocol flow including SSE connections and JSON-RPC messagin
 import asyncio
 import json
 import pytest
+import pytest_asyncio
 import httpx
 from typing import AsyncGenerator
 import time
@@ -14,7 +15,7 @@ import time
 class TestMCPProtocol:
     """Test MCP protocol implementation with proper SSE handling."""
     
-    @pytest.fixture
+    @pytest_asyncio.fixture
     async def client(self) -> AsyncGenerator[httpx.AsyncClient, None]:
         """Create HTTP client for testing."""
         async with httpx.AsyncClient(timeout=30.0) as client:
@@ -25,6 +26,7 @@ class TestMCPProtocol:
         """Base URL for MCP server."""
         return "http://localhost:8000"
     
+    @pytest.mark.asyncio
     async def test_sse_endpoint_connection(self, client: httpx.AsyncClient, base_url: str):
         """Test that SSE endpoint establishes connection properly."""
         # SSE endpoint should accept connection and keep it open
@@ -57,6 +59,7 @@ class TestMCPProtocol:
             # This is actually good - it means the connection was established
             pass
     
+    @pytest.mark.asyncio
     async def test_message_endpoint_initialize(self, client: httpx.AsyncClient, base_url: str):
         """Test MCP initialize request via message endpoint."""
         initialize_request = {
@@ -101,6 +104,7 @@ class TestMCPProtocol:
         assert server_info["name"] == "sanctum-letta-mcp"
         assert "version" in server_info
     
+    @pytest.mark.asyncio
     async def test_message_endpoint_initialized(self, client: httpx.AsyncClient, base_url: str):
         """Test MCP initialized notification."""
         initialized_notification = {
@@ -119,6 +123,7 @@ class TestMCPProtocol:
         assert response.status_code == 200
         # Response should be empty or minimal
     
+    @pytest.mark.asyncio
     async def test_list_tools(self, client: httpx.AsyncClient, base_url: str):
         """Test listing available tools."""
         list_tools_request = {
@@ -152,6 +157,7 @@ class TestMCPProtocol:
         assert health_tool is not None
         assert health_tool["description"] == "Check server health and plugin status"
     
+    @pytest.mark.asyncio
     async def test_call_health_tool(self, client: httpx.AsyncClient, base_url: str):
         """Test calling the health tool."""
         call_tool_request = {
@@ -190,6 +196,7 @@ class TestMCPProtocol:
         assert "plugins" in health_data
         assert "plugin_names" in health_data
     
+    @pytest.mark.asyncio
     async def test_invalid_json_rpc(self, client: httpx.AsyncClient, base_url: str):
         """Test handling of invalid JSON-RPC requests."""
         invalid_request = {
@@ -214,6 +221,7 @@ class TestMCPProtocol:
         error = data["error"]
         assert error["code"] == -32601  # Method not found
     
+    @pytest.mark.asyncio
     async def test_malformed_json(self, client: httpx.AsyncClient, base_url: str):
         """Test handling of malformed JSON."""
         response = await client.post(
@@ -230,6 +238,7 @@ class TestMCPProtocol:
         error = data["error"]
         assert error["code"] == -32700  # Parse error
     
+    @pytest.mark.asyncio
     async def test_concurrent_requests(self, client: httpx.AsyncClient, base_url: str):
         """Test handling of concurrent requests."""
         # Send multiple requests simultaneously
@@ -252,6 +261,7 @@ class TestMCPProtocol:
             assert data["id"] == i + 10
             assert "result" in data
     
+    @pytest.mark.asyncio
     async def test_sse_and_message_hybrid(self, client: httpx.AsyncClient, base_url: str):
         """Test that SSE and message endpoints work together."""
         # First establish SSE connection
