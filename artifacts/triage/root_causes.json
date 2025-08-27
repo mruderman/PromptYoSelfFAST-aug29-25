@@ -1,0 +1,88 @@
+[
+  {
+    "nodeid": "temp/sse_test.py::test_mcp_protocol",
+    "impacted_fastmcp_endpoints": ["initialize", "tools/list", "tools/call"],
+    "primary_root_cause": "server_not_running_sse",
+    "explanation": "The SSE test posts to http://localhost:8000 but no FastMCP HTTP/SSE server is started by the test suite, so every request fails and the test exits with SystemExit(1).",
+    "confidence": 0.60,
+    "impl_refs": [
+      {"file": "promptyoself_mcp_server.py", "function": "main", "line": 300},
+      {"file": "promptyoself_mcp_server.py", "function": "mcp.run (default stdio)", "line": 311}
+    ],
+    "traceback_excerpt": "HTTPConnectionPool(host='localhost', port=8000): Max retries exceeded ... SystemExit: 1",
+    "test_ref": {"file": "temp/sse_test.py", "line": 198}
+  },
+  {
+    "nodeid": "tests/e2e/test_mcp_workflow.py::TestMCPWorkflowHTTP::test_list_tools_and_call_health",
+    "impacted_fastmcp_endpoints": ["list_tools", "call_tool"],
+    "primary_root_cause": "http_transport_start_failure",
+    "explanation": "The http_server_process fixture launches the server with --transport http on port 8100, but the subprocess dies before binding the port (likely missing FastMCP HTTP deps), leading the FastMCP client to raise ConnectError.",
+    "confidence": 0.70,
+    "impl_refs": [
+      {"file": "promptyoself_mcp_server.py", "function": "main", "line": 310},
+      {"file": "tests/conftest.py", "function": "http_server_process", "line": 48}
+    ],
+    "traceback_excerpt": "httpx.ConnectError: All connection attempts failed",
+    "test_ref": {"file": "tests/e2e/test_mcp_workflow.py", "line": 28}
+  },
+  {
+    "nodeid": "tests/integration/test_mcp_protocol.py::TestMCPProtocolInMemory::test_call_health",
+    "impacted_fastmcp_endpoints": ["call_tool"],
+    "primary_root_cause": "health_result_format_mismatch",
+    "explanation": "health() returns a dict, but FastMCP wraps tool results in a list of ContentBlocks; the test receives a list (no text attr) and attempts json.loads(None), raising TypeError.",
+    "confidence": 0.75,
+    "impl_refs": [
+      {"file": "promptyoself_mcp_server.py", "function": "health", "line": 259}
+    ],
+    "traceback_excerpt": "TypeError: the JSON object must be str, bytes or bytearray, not NoneType",
+    "test_ref": {"file": "tests/integration/test_mcp_protocol.py", "line": 38}
+  },
+  {
+    "nodeid": "tests/unit/test_mcp_server.py::test_health_returns_expected_dict",
+    "impacted_fastmcp_endpoints": ["health"],
+    "primary_root_cause": "FunctionTool_not_callable",
+    "explanation": "Using @mcp.tool replaces the original coroutine with a FunctionTool wrapper; calling health() directly therefore raises TypeError: 'FunctionTool' object is not callable.",
+    "confidence": 0.90,
+    "impl_refs": [
+      {"file": "promptyoself_mcp_server.py", "function": "health", "line": 259}
+    ],
+    "traceback_excerpt": "TypeError: 'FunctionTool' object is not callable",
+    "test_ref": {"file": "tests/unit/test_mcp_server.py", "line": 28}
+  },
+  {
+    "nodeid": "tests/unit/test_mcp_server.py::test_register_multiple_schedule_options_error",
+    "impacted_fastmcp_endpoints": ["promptyoself_register"],
+    "primary_root_cause": "FunctionTool_not_callable",
+    "explanation": "@mcp.tool wraps promptyoself_register, so the test's direct call raises TypeError: 'FunctionTool' object is not callable.",
+    "confidence": 0.90,
+    "impl_refs": [
+      {"file": "promptyoself_mcp_server.py", "function": "promptyoself_register", "line": 63}
+    ],
+    "traceback_excerpt": "TypeError: 'FunctionTool' object is not callable",
+    "test_ref": {"file": "tests/unit/test_mcp_server.py", "line": 42}
+  },
+  {
+    "nodeid": "tests/unit/test_mcp_server.py::test_register_missing_schedule_error",
+    "impacted_fastmcp_endpoints": ["promptyoself_register"],
+    "primary_root_cause": "FunctionTool_not_callable",
+    "explanation": "Same wrapper issue as above — direct invocation of the decorated tool fails.",
+    "confidence": 0.90,
+    "impl_refs": [
+      {"file": "promptyoself_mcp_server.py", "function": "promptyoself_register", "line": 63}
+    ],
+    "traceback_excerpt": "TypeError: 'FunctionTool' object is not callable",
+    "test_ref": {"file": "tests/unit/test_mcp_server.py", "line": 58}
+  },
+  {
+    "nodeid": "tests/unit/test_mcp_server.py::test_upload_missing_auth_error",
+    "impacted_fastmcp_endpoints": ["promptyoself_upload"],
+    "primary_root_cause": "FunctionTool_not_callable",
+    "explanation": "Direct call to promptyoself_upload fails because the @mcp.tool decorator exposes a FunctionTool, not a coroutine.",
+    "confidence": 0.90,
+    "impl_refs": [
+      {"file": "promptyoself_mcp_server.py", "function": "promptyoself_upload", "line": 227}
+    ],
+    "traceback_excerpt": "TypeError: 'FunctionTool' object is not callable",
+    "test_ref": {"file": "tests/unit/test_mcp_server.py", "line": 77}
+  }
+]

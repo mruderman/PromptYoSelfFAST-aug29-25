@@ -36,9 +36,9 @@ sys.path.insert(0, root_dir)
 # Import modules with proper path handling
 try:
     # Try absolute import first (works when called from MCP server)
-    from smcp.plugins.promptyoself.db import add_schedule, list_schedules, cancel_schedule
-    from smcp.plugins.promptyoself.scheduler import calculate_next_run, execute_due_prompts, run_scheduler_loop
-    from smcp.plugins.promptyoself.letta_api import test_letta_connection, list_available_agents, validate_agent_exists
+    from promptyoself.db import add_schedule, list_schedules, cancel_schedule
+    from promptyoself.scheduler import calculate_next_run, execute_due_prompts, run_scheduler_loop
+    from promptyoself.letta_api import test_letta_connection, list_available_agents, validate_agent_exists
 except ImportError:
     # Fallback for direct execution - add current directory to path
     import importlib.util

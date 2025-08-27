@@ -31,9 +31,10 @@ import argparse
 from typing import Any, Dict, Optional
 
 from fastmcp import FastMCP, Context
+from fastmcp.tools.tool import ToolResult
 
 # Import PromptYoSelf CLI module functions (direct, not subprocess)
-from smcp.plugins.promptyoself import cli as pys_cli
+from promptyoself import cli as pys_cli
 
 # Map CLI functions
 _register_prompt = pys_cli.register_prompt
@@ -60,7 +61,6 @@ mcp = FastMCP(
 )
 
 
-@mcp.tool
 async def promptyoself_register(
     agent_id: str,
     prompt: str,
@@ -70,7 +70,6 @@ async def promptyoself_register(
     skip_validation: bool = False,
     max_repetitions: Optional[int] = None,
     start_at: Optional[str] = None,
-    ctx: Context | None = None,
 ) -> Dict[str, Any]:
     """
     Register a new scheduled prompt for a Letta agent.
@@ -88,23 +87,52 @@ async def promptyoself_register(
     Returns:
         JSON dict with status, id, next_run, message or error.
     """
-    args = {
-        "agent_id": agent_id,
-        "prompt": prompt,
-        "time": time,
-        "cron": cron,
-        "every": every,
-        "skip_validation": skip_validation,
-        "max_repetitions": max_repetitions,
-        "start_at": start_at,
-    }
     try:
-        if ctx:
-            await ctx.info(f"Registering prompt for agent={agent_id}")
+        # Validation: exactly one of time/cron/every must be provided
+        provided = [opt for opt in (time, cron, every) if opt]
+        if len(provided) > 1:
+            return {"error": "Cannot specify multiple scheduling options"}
+        if len(provided) == 0:
+            return {"error": "Must specify one of --time, --cron, or --every"}
+
+        args = {
+            "agent_id": agent_id,
+            "prompt": prompt,
+            "time": time,
+            "cron": cron,
+            "every": every,
+            "skip_validation": skip_validation,
+            "max_repetitions": max_repetitions,
+            "start_at": start_at,
+        }
         return _register_prompt(args)
     except Exception as e:
         logger.exception("promptyoself_register failed")
         return {"error": f"Registration failed: {e}"}
+
+
+@mcp.tool(name="promptyoself_register")
+async def _promptyoself_register_tool(
+    agent_id: str,
+    prompt: str,
+    time: Optional[str] = None,
+    cron: Optional[str] = None,
+    every: Optional[str] = None,
+    skip_validation: bool = False,
+    max_repetitions: Optional[int] = None,
+    start_at: Optional[str] = None,
+    ctx: Context | None = None,
+) -> Dict[str, Any]:
+    return await promptyoself_register(
+        agent_id=agent_id,
+        prompt=prompt,
+        time=time,
+        cron=cron,
+        every=every,
+        skip_validation=skip_validation,
+        max_repetitions=max_repetitions,
+        start_at=start_at,
+    )
 
 
 @mcp.tool
@@ -224,12 +252,10 @@ async def promptyoself_agents(ctx: Context | None = None) -> Dict[str, Any]:
         return {"error": f"Agents listing failed: {e}"}
 
 
-@mcp.tool
 async def promptyoself_upload(
     source_code: str,
     name: Optional[str] = None,
     description: Optional[str] = None,
-    ctx: Context | None = None,
 ) -> Dict[str, Any]:
     """
     Upload a Letta-native tool from complete Python source code.
@@ -242,41 +268,55 @@ async def promptyoself_upload(
     Returns:
         JSON dict indicating success with tool_id/name, or error.
     """
-    args = {
-        "name": name,
-        "description": description,
-        "source_code": source_code,
-    }
     try:
-        if ctx:
-            await ctx.info("Uploading Letta-native tool from source code")
+        # Env guard: require either LETTA_API_KEY or LETTA_SERVER_PASSWORD
+        if not (os.environ.get("LETTA_API_KEY") or os.environ.get("LETTA_SERVER_PASSWORD")):
+            return {"error": "Missing LETTA_API_KEY or LETTA_SERVER_PASSWORD"}
+
+        args = {
+            "name": name,
+            "description": description,
+            "source_code": source_code,
+        }
         return _upload_tool(args)
     except Exception as e:
         logger.exception("promptyoself_upload failed")
         return {"error": f"Upload failed: {e}"}
 
 
-@mcp.tool
-async def health(ctx: Context | None = None) -> Dict[str, Any]:
+@mcp.tool(name="promptyoself_upload")
+async def _promptyoself_upload_tool(
+    source_code: str,
+    name: Optional[str] = None,
+    description: Optional[str] = None,
+    ctx: Context | None = None,
+) -> Dict[str, Any]:
+    return await promptyoself_upload(
+        source_code=source_code,
+        name=name,
+        description=description,
+    )
+
+
+async def health() -> Dict[str, Any]:
     """
     Server health and configuration summary.
 
     Returns:
         JSON dict with status and relevant configuration hints.
     """
-    try:
-        cfg = {
-            "status": "healthy",
-            "letta_base_url": os.getenv("LETTA_BASE_URL", "http://localhost:8283"),
-            "db": os.getenv("PROMPTYOSELF_DB", "promptyoself.db"),
-            "auth_set": bool(os.getenv("LETTA_API_KEY") or os.getenv("LETTA_SERVER_PASSWORD")),
-        }
-        if ctx:
-            await ctx.info(f"Health check: {json.dumps(cfg)}")
-        return cfg
-    except Exception as e:
-        logger.exception("health check failed")
-        return {"error": f"Health check failed: {e}"}
+    return {
+        "status": "healthy",
+        "letta_base_url": os.getenv("LETTA_BASE_URL", "http://localhost:8283"),
+        "db": os.getenv("PROMPTYOSELF_DB", "promptyoself.db"),
+        "auth_set": bool(os.getenv("LETTA_API_KEY") or os.getenv("LETTA_SERVER_PASSWORD")),
+    }
+
+
+@mcp.tool(name="health")
+async def _health_tool(ctx: Context | None = None) -> Dict[str, Any]:
+    # Return a plain dict so both in-memory and HTTP clients can consume it
+    return await health()
 
 
 def main() -> None:
@@ -311,8 +351,11 @@ def main() -> None:
     if args.transport == "stdio":
         mcp.run(transport="stdio")
     elif args.transport == "http":
-        # streamable-http or http are supported; use "http" for simplicity here
-        mcp.run(transport="http", host=args.host, port=args.port, path=args.path, log_level=args.log_level)
+        try:
+            mcp.run(transport="http", host=args.host, port=args.port, path=args.path, log_level=args.log_level)
+        except Exception as exc:
+            logger.warning("HTTP transport unavailable (%s), using 'streamable-http'", exc)
+            mcp.run(transport="streamable-http", host=args.host, port=args.port, path=args.path, log_level=args.log_level)
     elif args.transport == "sse":
         mcp.run(transport="sse", host=args.host, port=args.port)
     else:

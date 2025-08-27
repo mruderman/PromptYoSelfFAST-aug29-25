@@ -10,7 +10,7 @@ Quick start:
 # install server + test deps
 pip install -r requirements.txt
 # install PromptYoSelf plugin deps
-pip install -r smcp/plugins/promptyoself/requirements.txt
+pip install -r promptyoself/requirements.txt
 
 # run in stdio (best for local agents)
 python promptyoself_mcp_server.py

@@ -1,0 +1,124 @@
+============================= test session starts ==============================
+platform linux -- Python 3.12.3, pytest-8.4.1, pluggy-1.6.0 -- /root/sanctum-letta-mcp/venv/bin/python
+cachedir: .pytest_cache
+rootdir: /root/sanctum-letta-mcp
+configfile: pytest.ini
+testpaths: tests
+plugins: asyncio-1.1.0, socket-0.7.0, timeout-2.4.0, anyio-4.10.0, cov-6.2.1, mock-3.12.0
+asyncio: mode=Mode.AUTO, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+timeout: 60.0s
+timeout method: thread
+timeout func_only: False
+collecting ... collected 7 items
+
+tests/e2e/test_mcp_workflow.py::TestMCPWorkflowHTTP::test_list_tools_and_call_health ERROR [ 14%]
+tests/integration/test_mcp_protocol.py::TestMCPProtocolInMemory::test_list_tools_contains_health PASSED [ 28%]
+tests/integration/test_mcp_protocol.py::TestMCPProtocolInMemory::test_call_health FAILED [ 42%]
+tests/unit/test_mcp_server.py::test_health_returns_expected_dict PASSED  [ 57%]
+tests/unit/test_mcp_server.py::test_register_multiple_schedule_options_error PASSED [ 71%]
+tests/unit/test_mcp_server.py::test_register_missing_schedule_error PASSED [ 85%]
+tests/unit/test_mcp_server.py::test_upload_missing_auth_error PASSED     [100%]
+ERROR: Coverage failure: total of 26 is less than fail-under=80
+
+
+==================================== ERRORS ====================================
+____ ERROR at setup of TestMCPWorkflowHTTP.test_list_tools_and_call_health _____
+venv/lib/python3.12/site-packages/fastmcp/client/client.py:467: in _session_runner
+    await stack.enter_async_context(self._context_manager())
+/usr/lib/python3.12/contextlib.py:659: in enter_async_context
+    result = await _enter(cm)
+             ^^^^^^^^^^^^^^^^
+/usr/lib/python3.12/contextlib.py:210: in __aenter__
+    return await anext(self.gen)
+           ^^^^^^^^^^^^^^^^^^^^^
+venv/lib/python3.12/site-packages/fastmcp/client/client.py:341: in _context_manager
+    with catch(get_catch_handlers()):
+venv/lib/python3.12/site-packages/exceptiongroup/_catch.py:39: in __exit__
+    raise unhandled from exc.__cause__
+venv/lib/python3.12/site-packages/exceptiongroup/_catch.py:65: in handle_exception
+    result = handler(matched)
+             ^^^^^^^^^^^^^^^^
+venv/lib/python3.12/site-packages/fastmcp/utilities/exceptions.py:29: in _exception_handler
+    raise leaf
+venv/lib/python3.12/site-packages/mcp/client/streamable_http.py:407: in handle_request_async
+    await self._handle_post_request(ctx)
+venv/lib/python3.12/site-packages/mcp/client/streamable_http.py:260: in _handle_post_request
+    async with ctx.client.stream(
+/usr/lib/python3.12/contextlib.py:210: in __aenter__
+    return await anext(self.gen)
+           ^^^^^^^^^^^^^^^^^^^^^
+venv/lib/python3.12/site-packages/httpx/_client.py:1583: in stream
+    response = await self.send(
+venv/lib/python3.12/site-packages/httpx/_client.py:1629: in send
+    response = await self._send_handling_auth(
+venv/lib/python3.12/site-packages/httpx/_client.py:1657: in _send_handling_auth
+    response = await self._send_handling_redirects(
+venv/lib/python3.12/site-packages/httpx/_client.py:1694: in _send_handling_redirects
+    response = await self._send_single_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+venv/lib/python3.12/site-packages/httpx/_client.py:1730: in _send_single_request
+    response = await transport.handle_async_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+venv/lib/python3.12/site-packages/httpx/_transports/default.py:393: in handle_async_request
+    with map_httpcore_exceptions():
+/usr/lib/python3.12/contextlib.py:158: in __exit__
+    self.gen.throw(value)
+venv/lib/python3.12/site-packages/httpx/_transports/default.py:118: in map_httpcore_exceptions
+    raise mapped_exc(message) from exc
+E   httpx.ConnectError: All connection attempts failed
+
+The above exception was the direct cause of the following exception:
+tests/e2e/test_mcp_workflow.py:29: in http_client
+    async with client:
+venv/lib/python3.12/site-packages/fastmcp/client/client.py:362: in __aenter__
+    return await self._connect()
+           ^^^^^^^^^^^^^^^^^^^^^
+venv/lib/python3.12/site-packages/fastmcp/client/client.py:406: in _connect
+    raise RuntimeError(
+E   RuntimeError: Client failed to connect: All connection attempts failed
+=================================== FAILURES ===================================
+___________________ TestMCPProtocolInMemory.test_call_health ___________________
+tests/integration/test_mcp_protocol.py:43: in test_call_health
+    data = json.loads(text)
+           ^^^^^^^^^^^^^^^^
+/usr/lib/python3.12/json/__init__.py:339: in loads
+    raise TypeError(f'the JSON object must be str, bytes or bytearray, '
+E   TypeError: the JSON object must be str, bytes or bytearray, not NoneType
+----------------------------- Captured stdout call -----------------------------
+2025-08-27 00:34:26,714 - mcp.server.lowlevel.server - INFO - Processing request of type CallToolRequest
+2025-08-27 00:34:26,725 - mcp.server.lowlevel.server - INFO - Processing request of type ListToolsRequest
+------------------------------ Captured log call -------------------------------
+INFO     mcp.server.lowlevel.server:server.py:624 Processing request of type CallToolRequest
+INFO     mcp.server.lowlevel.server:server.py:624 Processing request of type ListToolsRequest
+==================================== PASSES ====================================
+___________ TestMCPProtocolInMemory.test_list_tools_contains_health ____________
+----------------------------- Captured stdout call -----------------------------
+2025-08-27 00:34:26,684 - mcp.server.lowlevel.server - INFO - Processing request of type ListToolsRequest
+------------------------------ Captured log call -------------------------------
+INFO     mcp.server.lowlevel.server:server.py:624 Processing request of type ListToolsRequest
+================================ tests coverage ================================
+_______________ coverage: platform linux, python 3.12.3-final-0 ________________
+
+Name                             Stmts   Miss  Cover   Missing
+--------------------------------------------------------------
+promptyoself/__init__.py             0      0   100%
+promptyoself/cli.py                315    274    13%   21, 42-65, 70-233, 238-287, 292-360, 365-391, 396-423, 428-504, 508-629, 658-669, 685-691, 704-706, 720-725, 735-737, 747-749, 764-778, 793-799, 803
+promptyoself/db.py                 206    133    35%   12-14, 29-33, 38-63, 68-70, 140, 153, 169-187, 191-192, 197-198, 209-226, 230-263, 269-324, 328-379, 383-393, 397-425, 429, 433-481, 484-486
+promptyoself/letta_api.py          177    160    10%   15-17, 28-83, 98-164, 178-208, 223-266, 280-383, 393-403, 416-438, 454-475, 484-509
+promptyoself/logging_config.py     175     82    53%   21-23, 27-62, 78, 129, 150, 170, 187-199, 206-216, 223-235, 242-251, 290, 298-302, 308-312, 318-322, 328-332, 341-344, 347-350, 353-359, 375-395
+promptyoself/models.py               0      0   100%
+promptyoself/scheduler.py          148    123    17%   23-59, 65-69, 73-92, 96-219, 225-227, 231-248, 252-259, 263-268, 272-280, 284-285
+promptyoself_mcp_server.py         122     70    43%   98-111, 126, 154-165, 182-189, 208-218, 229-235, 246-252, 276-284, 294, 323-362, 366
+--------------------------------------------------------------
+TOTAL                             1143    842    26%
+Coverage HTML written to dir htmlcov
+FAIL Required test coverage of 80% not reached. Total coverage: 26.33%
+=========================== short test summary info ============================
+PASSED tests/integration/test_mcp_protocol.py::TestMCPProtocolInMemory::test_list_tools_contains_health
+PASSED tests/unit/test_mcp_server.py::test_health_returns_expected_dict
+PASSED tests/unit/test_mcp_server.py::test_register_multiple_schedule_options_error
+PASSED tests/unit/test_mcp_server.py::test_register_missing_schedule_error
+PASSED tests/unit/test_mcp_server.py::test_upload_missing_auth_error
+ERROR tests/e2e/test_mcp_workflow.py::TestMCPWorkflowHTTP::test_list_tools_and_call_health - RuntimeError: Client failed to connect: All connection attempts failed
+FAILED tests/integration/test_mcp_protocol.py::TestMCPProtocolInMemory::test_call_health - TypeError: the JSON object must be str, bytes or bytearray, not NoneType
+=============== 1 failed, 5 passed, 1 warning, 1 error in 4.56s ================

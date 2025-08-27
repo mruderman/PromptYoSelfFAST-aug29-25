@@ -41,3 +41,6 @@ htmlcov/
 # Distribution
 dist/
 build/ 
+
+# Secrets
+*.env

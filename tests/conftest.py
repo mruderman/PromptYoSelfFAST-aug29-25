@@ -1,154 +1,139 @@
 """
-Pytest configuration and fixtures for MCP Server tests.
+Pytest configuration and fixtures for FastMCP-based PromptYoSelf server tests.
+Replaces legacy Sanctum plugin-host fixtures with FastMCP in-memory and HTTP client fixtures.
 """
 
-import asyncio
-import json
 import os
 import sys
-import tempfile
+import time
+import httpx
 import pytest
-import aiohttp
-from aiohttp.test_utils import TestClient, TestServer
-from pathlib import Path
+import asyncio
+import subprocess
 import pytest_asyncio
+from pathlib import Path
 
-# Add the project root to the path
-sys.path.insert(0, str(Path(__file__).parent.parent))
+# Ensure project root is on sys.path
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
-from smcp.mcp_server import discover_plugins, execute_plugin_tool, server
+# Import the new FastMCP server instance
+import promptyoself_mcp_server as srv
 
 
-@pytest.fixture
+@pytest.fixture(scope="session")
 def event_loop():
-    """Create an instance of the default event loop for the test session."""
-    loop = asyncio.get_event_loop_policy().new_event_loop()
+    """Create a session-scoped event loop for asyncio tests."""
+    loop = asyncio.new_event_loop()
     yield loop
     loop.close()
 
 
-@pytest.fixture
-def temp_plugins_dir():
-    """Create a temporary plugins directory for testing."""
-    with tempfile.TemporaryDirectory() as temp_dir:
-        plugins_dir = Path(temp_dir) / "plugins"
-        plugins_dir.mkdir()
-        yield plugins_dir
+@pytest_asyncio.fixture
+async def mcp_in_memory_client():
+    """
+    Fast, in-process client using FastMCP's in-memory transport.
+    Ideal for unit/integration tests without starting a subprocess or binding ports.
+    """
+    try:
+        from fastmcp import Client
+    except ImportError as e:
+        pytest.skip(f"fastmcp is required for these tests: {e}")
+
+    client = Client(srv.mcp)  # in-memory transport by passing server instance
+    async with client:
+        yield client
+
+
+def _wait_for_server(base_url: str, timeout: int = 10) -> bool:
+    """
+    Wait for the server to respond to HTTP requests.
+    
+    Args:
+        base_url: The base URL of the server (e.g., http://127.0.0.1:8100/mcp)
+        timeout: Maximum time to wait in seconds
+        
+    Returns:
+        True if server is responsive, False otherwise
+    """
+    start_time = time.time()
+    while time.time() - start_time < timeout:
+        try:
+            # Try a simple GET request to see if server is responsive
+            response = httpx.get(f"{base_url}/", timeout=1.0)
+            # If we get any response (even 404), the server is running
+            return True
+        except Exception:
+            # Server not ready yet, wait a bit and try again
+            time.sleep(0.5)
+    return False
 
 
 @pytest.fixture
-def mock_plugin_cli(temp_plugins_dir):
-    """Create a mock plugin CLI for testing."""
-    plugin_dir = temp_plugins_dir / "test_plugin"
-    plugin_dir.mkdir()
-    
-    cli_path = plugin_dir / "cli.py"
-    cli_content = '''#!/usr/bin/env python3
-import argparse
-import json
-import sys
+def http_server_process(tmp_path):
+    """
+    Start the FastMCP server (HTTP transport) as a subprocess for E2E tests.
+    Uses 127.0.0.1:8100 by default to avoid conflicts.
+    """
+    host = os.environ.get("TEST_MCP_HOST", "127.0.0.1")
+    port = os.environ.get("TEST_MCP_PORT", "8100")
+    path = os.environ.get("TEST_MCP_PATH", "/mcp")
 
-def test_command(args):
-    return {"result": f"Test result: {args.get('param', 'default')}"}
+    cmd = [
+        sys.executable,
+        "promptyoself_mcp_server.py",
+        "--transport",
+        "http",
+        "--host",
+        host,
+        "--port",
+        port,
+        "--path",
+        path,
+    ]
 
-def main():
-    parser = argparse.ArgumentParser()
-    subparsers = parser.add_subparsers(dest="command")
-    
-    test_parser = subparsers.add_parser("test-command")
-    test_parser.add_argument("--param", default="default")
-    
-    args = parser.parse_args()
-    
-    if args.command == "test-command":
-        result = test_command({"param": args.param})
-        print(json.dumps(result))
-        sys.exit(0)
-    else:
-        print(json.dumps({"error": "Unknown command"}))
-        sys.exit(1)
+    proc = subprocess.Popen(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        cwd=str(PROJECT_ROOT),
+        text=True,
+    )
 
-if __name__ == "__main__":
-    main()
-'''
+    base_url = f"http://{host}:{port}{path}"
     
-    with open(cli_path, 'w') as f:
-        f.write(cli_content)
+    # Give the server time to bind the port and start responding
+    time.sleep(1.0)  # Initial wait
     
-    # Make it executable
-    os.chmod(cli_path, 0o755)
+    # Check if the process is still running
+    if proc.poll() is not None:
+        # Process has terminated, collect output for debugging
+        stdout, stderr = proc.communicate()
+        raise RuntimeError(f"Server process terminated unexpectedly.\nSTDOUT:\n{stdout}\nSTDERR:\n{stderr}")
     
-    return cli_path
+    # Wait for server to be responsive
+    if not _wait_for_server(base_url, timeout=10):
+        # Server didn't start in time, collect output for debugging
+        try:
+            stdout, stderr = proc.communicate(timeout=5)
+        except subprocess.TimeoutExpired:
+            # If we can't get output even after 5 seconds, terminate the process
+            proc.kill()
+            stdout, stderr = proc.communicate()
+        raise RuntimeError(f"Server failed to start within timeout period.\nSTDOUT:\n{stdout}\nSTDERR:\n{stderr}")
 
-
-@pytest.fixture
-def sample_jsonrpc_request():
-    """Sample JSON-RPC request for testing."""
-    return {
-        "jsonrpc": "2.0",
-        "id": 1,
-        "method": "tools/call",
-        "params": {
-            "name": "test_plugin.test-command",
-            "arguments": {
-                "param": "test_value"
-            }
-        }
+    yield {
+        "process": proc,
+        "host": host,
+        "port": int(port),
+        "path": path,
+        "base_url": base_url,
     }
 
-
-@pytest.fixture
-def sample_jsonrpc_response():
-    """Sample JSON-RPC response for testing."""
-    return {
-        "jsonrpc": "2.0",
-        "id": 1,
-        "result": {
-            "content": [
-                {
-                    "type": "text",
-                    "text": "Test result: test_value"
-                }
-            ]
-        }
-    }
-
-
-@pytest.fixture
-def test_plugins_env(temp_plugins_dir):
-    os.environ["MCP_PLUGINS_DIR"] = str(temp_plugins_dir)
-    return temp_plugins_dir
-
-
-@pytest.fixture
-def temp_plugins_dir_with_plugins(request, temp_plugins_dir):
-    # Create plugins as specified by the test param
-    plugins = getattr(request, 'param', None)
-    if plugins:
-        for plugin in plugins:
-            plugin_dir = temp_plugins_dir / plugin['name']
-            plugin_dir.mkdir(parents=True, exist_ok=True)
-            cli_path = plugin_dir / "cli.py"
-            with open(cli_path, 'w') as f:
-                f.write(plugin['cli_content'])
-            os.chmod(cli_path, 0o755)
-    os.environ["MCP_PLUGINS_DIR"] = str(temp_plugins_dir)
-    return temp_plugins_dir
-
-
-@pytest_asyncio.fixture
-async def fastmcp_server(temp_plugins_dir_with_plugins):
-    """Create a test FastMCP server instance."""
-    # Import here to avoid circular imports
-    from smcp.mcp_server import server, register_plugin_tools
-    
-    # Register plugin tools for testing
-    register_plugin_tools()
-    
-    return server
-
-
-@pytest_asyncio.fixture
-async def sse_app(fastmcp_server):
-    """Create a test SSE application instance."""
-    return fastmcp_server.sse_app() 
+    # Cleanup
+    try:
+        proc.terminate()
+        proc.wait(timeout=10)
+    except Exception:
+        proc.kill()

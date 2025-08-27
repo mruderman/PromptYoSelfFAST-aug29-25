@@ -10,8 +10,8 @@ This script provides easy access to run different types of tests:
 """
 
 import sys
-import subprocess
 import argparse
+import subprocess
 from pathlib import Path
 
 
@@ -59,7 +59,11 @@ def main():
         base_cmd.append("-v")
     
     if not args.no_cov and args.type in ["all", "coverage"]:
-        base_cmd.extend(["--cov=mcp", "--cov-report=term-missing"])
+        base_cmd.extend([
+            "--cov=promptyoself_mcp_server",
+            "--cov=promptyoself",
+            "--cov-report=term-missing"
+        ])
     
     success = True
     

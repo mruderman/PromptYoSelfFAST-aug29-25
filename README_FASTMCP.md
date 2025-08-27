@@ -31,7 +31,7 @@ Archived legacy content:
   ```
 - PromptYoSelf plugin dependencies:
   ```
-  pip install -r smcp/plugins/promptyoself/requirements.txt
+  pip install -r promptyoself/requirements.txt
   ```
 
 Note: requirements.txt now includes fastmcp>=2.7.
@@ -167,10 +167,10 @@ flowchart TD
 ## File Map
 
 - promptyoself_mcp_server.py — FastMCP server exposing the tools above
-- smcp/plugins/promptyoself/cli.py — CLI entry (imported by the server)
-- smcp/plugins/promptyoself/db.py — DB models/operations
-- smcp/plugins/promptyoself/scheduler.py — Execution/scheduling
-- smcp/plugins/promptyoself/letta_api.py — Letta client integration
+- promptyoself/cli.py — CLI entry (imported by the server)
+- promptyoself/db.py — DB models/operations
+- promptyoself/scheduler.py — Execution/scheduling
+- promptyoself/letta_api.py — Letta client integration
 - archive/sanctum/** — Archived legacy Sanctum server and docs
 
 ## Client integration

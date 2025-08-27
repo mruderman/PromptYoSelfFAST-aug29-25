@@ -35,37 +35,37 @@ PromptYoSelf is a self-hosted prompt scheduler plugin for Letta agents, enabling
 ### Running the Scheduler
 ```bash
 # Start the background scheduler daemon
-python -m smcp.plugins.promptyoself.cli execute --daemon
+python -m promptyoself.cli execute --daemon
 
 # Execute due prompts once
-python -m smcp.plugins.promptyoself.cli execute
+python -m promptyoself.cli execute
 
 # Test Letta connection
-python -m smcp.plugins.promptyoself.cli test
+python -m promptyoself.cli test
 ```
 
 ### Managing Schedules
 ```bash
 # Create a one-time schedule
-python -m smcp.plugins.promptyoself.cli register <agent_id> "prompt text" once "2024-12-25 10:00:00"
+python -m promptyoself.cli register <agent_id> "prompt text" once "2024-12-25 10:00:00"
 
 # Create an interval schedule (every 30 minutes)
-python -m smcp.plugins.promptyoself.cli register <agent_id> "prompt text" interval "30 minutes"
+python -m promptyoself.cli register <agent_id> "prompt text" interval "30 minutes"
 
 # Create a daily schedule
-python -m smcp.plugins.promptyoself.cli register <agent_id> "prompt text" daily "18:00"
+python -m promptyoself.cli register <agent_id> "prompt text" daily "18:00"
 
 # Create a cron schedule
-python -m smcp.plugins.promptyoself.cli register <agent_id> "prompt text" cron "0 9 * * MON-FRI"
+python -m promptyoself.cli register <agent_id> "prompt text" cron "0 9 * * MON-FRI"
 
 # List all schedules
-python -m smcp.plugins.promptyoself.cli list
+python -m promptyoself.cli list
 
 # List schedules for specific agent
-python -m smcp.plugins.promptyoself.cli list --agent-id <agent_id>
+python -m promptyoself.cli list --agent-id <agent_id>
 
 # Cancel a schedule
-python -m smcp.plugins.promptyoself.cli cancel <schedule_id>
+python -m promptyoself.cli cancel <schedule_id>
 ```
 
 ### Testing and Development
@@ -74,7 +74,7 @@ python -m smcp.plugins.promptyoself.cli cancel <schedule_id>
 cd /root/Compose-Main/config/letta/sanctum-letta-mcp
 
 # List available agents
-python -m smcp.plugins.promptyoself.cli agents
+python -m promptyoself.cli agents
 
 # Check database status
 sqlite3 promptyoself.db "SELECT COUNT(*) FROM schedules WHERE active = 1;"
@@ -226,12 +226,12 @@ success = send_prompt_to_agent(agent_id, prompt_text, schedule_id)
 
 ### Testing Schedule Execution
 1. Create a test schedule with short interval
-2. Run daemon mode: `python -m smcp.plugins.promptyoself.cli execute --daemon`
+2. Run daemon mode: `python -m promptyoself.cli execute --daemon`
 3. Monitor logs: `tail -f promptyoself.log`
 4. Check database: `sqlite3 promptyoself.db "SELECT * FROM schedules;"`
 
 ### Debugging Connection Issues
-1. Test connection: `python -m smcp.plugins.promptyoself.cli test`
+1. Test connection: `python -m promptyoself.cli test`
 2. Check environment variables are set correctly
 3. Verify Letta server is running: `curl http://localhost:8283/v1/health/`
 4. Review error logs: `tail -f promptyoself_errors.log`

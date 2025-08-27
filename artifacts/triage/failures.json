@@ -1,0 +1,86 @@
+[
+  {
+    "nodeid": "temp/sse_test.py::test_mcp_protocol",
+    "status": "failed",
+    "file": "temp/sse_test.py",
+    "lineno": 116,
+    "error_type": "SystemExit",
+    "error_message": "SystemExit: 1",
+    "traceback_snippet": "...\\nSystemExit: 1\\n...",
+    "implicated_modules": ["promptyoself_mcp_server.py", "fastmcp.client.client"],
+    "impacted_fastmcp_endpoints": ["initialize", "tools/list", "tools/call"],
+    "logs_excerpt": "[SSE] Listener error: HTTPConnectionPool(host='localhost', port=8000): Max retries exceeded\\n[TEST] MCP protocol test failed."
+  },
+  {
+    "nodeid": "tests/e2e/test_mcp_workflow.py::TestMCPWorkflowHTTP::test_list_tools_and_call_health",
+    "status": "error",
+    "file": "tests/e2e/test_mcp_workflow.py",
+    "lineno": 29,
+    "error_type": "RuntimeError",
+    "error_message": "RuntimeError: Client failed to connect: All connection attempts failed",
+    "traceback_snippet": "...\\nRuntimeError: Client failed to connect: All connection attempts failed\\n...",
+    "implicated_modules": ["promptyoself_mcp_server.py", "fastmcp.client.client"],
+    "impacted_fastmcp_endpoints": ["list_tools", "call_tool"],
+    "logs_excerpt": ""
+  },
+  {
+    "nodeid": "tests/integration/test_mcp_protocol.py::TestMCPProtocolInMemory::test_call_health",
+    "status": "failed",
+    "file": "tests/integration/test_mcp_protocol.py",
+    "lineno": 43,
+    "error_type": "TypeError",
+    "error_message": "TypeError: the JSON object must be str, bytes or bytearray, not NoneType",
+    "traceback_snippet": "...\\nTypeError: the JSON object must be str, bytes or bytearray, not NoneType\\n...",
+    "implicated_modules": ["promptyoself_mcp_server.py"],
+    "impacted_fastmcp_endpoints": ["call_tool"],
+    "logs_excerpt": "2025-08-26 23:35:02,640 INFO Processing request of type CallToolRequest"
+  },
+  {
+    "nodeid": "tests/unit/test_mcp_server.py::test_health_returns_expected_dict",
+    "status": "failed",
+    "file": "tests/unit/test_mcp_server.py",
+    "lineno": 28,
+    "error_type": "TypeError",
+    "error_message": "TypeError: 'FunctionTool' object is not callable",
+    "traceback_snippet": "...\\nTypeError: 'FunctionTool' object is not callable\\n...",
+    "implicated_modules": ["promptyoself_mcp_server.py"],
+    "impacted_fastmcp_endpoints": ["health"],
+    "logs_excerpt": ""
+  },
+  {
+    "nodeid": "tests/unit/test_mcp_server.py::test_register_multiple_schedule_options_error",
+    "status": "failed",
+    "file": "tests/unit/test_mcp_server.py",
+    "lineno": 42,
+    "error_type": "TypeError",
+    "error_message": "TypeError: 'FunctionTool' object is not callable",
+    "traceback_snippet": "...\\nTypeError: 'FunctionTool' object is not callable\\n...",
+    "implicated_modules": ["promptyoself_mcp_server.py"],
+    "impacted_fastmcp_endpoints": ["promptyoself_register"],
+    "logs_excerpt": ""
+  },
+  {
+    "nodeid": "tests/unit/test_mcp_server.py::test_register_missing_schedule_error",
+    "status": "failed",
+    "file": "tests/unit/test_mcp_server.py",
+    "lineno": 58,
+    "error_type": "TypeError",
+    "error_message": "TypeError: 'FunctionTool' object is not callable",
+    "traceback_snippet": "...\\nTypeError: 'FunctionTool' object is not callable\\n...",
+    "implicated_modules": ["promptyoself_mcp_server.py"],
+    "impacted_fastmcp_endpoints": ["promptyoself_register"],
+    "logs_excerpt": ""
+  },
+  {
+    "nodeid": "tests/unit/test_mcp_server.py::test_upload_missing_auth_error",
+    "status": "failed",
+    "file": "tests/unit/test_mcp_server.py",
+    "lineno": 77,
+    "error_type": "TypeError",
+    "error_message": "TypeError: 'FunctionTool' object is not callable",
+    "traceback_snippet": "...\\nTypeError: 'FunctionTool' object is not callable\\n...",
+    "implicated_modules": ["promptyoself_mcp_server.py"],
+    "impacted_fastmcp_endpoints": ["promptyoself_upload"],
+    "logs_excerpt": ""
+  }
+]
