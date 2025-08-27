@@ -1,5 +1,5 @@
 ============================= test session starts ==============================
-platform linux -- Python 3.12.3, pytest-8.4.1, pluggy-1.6.0 -- /root/sanctum-letta-mcp/venv/bin/python
+platform linux -- Python 3.12.3, pytest-8.4.1, pluggy-1.6.0 -- /root/sanctum-letta-mcp/venv/bin/python3
 cachedir: .pytest_cache
 rootdir: /root/sanctum-letta-mcp
 configfile: pytest.ini
@@ -9,39 +9,9 @@ asyncio: mode=Mode.AUTO, asyncio_default_fixture_loop_scope=None, asyncio_defaul
 timeout: 60.0s
 timeout method: thread
 timeout func_only: False
-collecting ... collected 3 items / 5 errors
+collecting ... collected 61 items / 1 error
 
 ==================================== ERRORS ====================================
-___________________ ERROR collecting tests/unit/test_cli.py ____________________
-ImportError while importing test module '/root/sanctum-letta-mcp/tests/unit/test_cli.py'.
-Hint: make sure your test modules/packages have valid Python names.
-Traceback:
-/usr/lib/python3.12/importlib/__init__.py:90: in import_module
-    return _bootstrap._gcd_import(name[level:], package, level)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-tests/unit/test_cli.py:1: in <module>
-    import mock
-E   ModuleNotFoundError: No module named 'mock'
-____________________ ERROR collecting tests/unit/test_db.py ____________________
-ImportError while importing test module '/root/sanctum-letta-mcp/tests/unit/test_db.py'.
-Hint: make sure your test modules/packages have valid Python names.
-Traceback:
-/usr/lib/python3.12/importlib/__init__.py:90: in import_module
-    return _bootstrap._gcd_import(name[level:], package, level)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-tests/unit/test_db.py:1: in <module>
-    import mock
-E   ModuleNotFoundError: No module named 'mock'
-________________ ERROR collecting tests/unit/test_letta_api.py _________________
-ImportError while importing test module '/root/sanctum-letta-mcp/tests/unit/test_letta_api.py'.
-Hint: make sure your test modules/packages have valid Python names.
-Traceback:
-/usr/lib/python3.12/importlib/__init__.py:90: in import_module
-    return _bootstrap._gcd_import(name[level:], package, level)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-tests/unit/test_letta_api.py:1: in <module>
-    import mock
-E   ModuleNotFoundError: No module named 'mock'
 ________________ ERROR collecting tests/unit/test_mcp_server.py ________________
 ImportError while importing test module '/root/sanctum-letta-mcp/tests/unit/test_mcp_server.py'.
 Hint: make sure your test modules/packages have valid Python names.
@@ -49,24 +19,10 @@ Traceback:
 /usr/lib/python3.12/importlib/__init__.py:90: in import_module
     return _bootstrap._gcd_import(name[level:], package, level)
            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-tests/unit/test_mcp_server.py:1: in <module>
-    import mock
-E   ModuleNotFoundError: No module named 'mock'
-________________ ERROR collecting tests/unit/test_scheduler.py _________________
-ImportError while importing test module '/root/sanctum-letta-mcp/tests/unit/test_scheduler.py'.
-Hint: make sure your test modules/packages have valid Python names.
-Traceback:
-/usr/lib/python3.12/importlib/__init__.py:90: in import_module
-    return _bootstrap._gcd_import(name[level:], package, level)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-tests/unit/test_scheduler.py:1: in <module>
-    import mock
-E   ModuleNotFoundError: No module named 'mock'
+tests/unit/test_mcp_server.py:3: in <module>
+    from promptyoself_mcp_server import health, serve_stdio_transport, serve_http_transport, serve_sse_transport
+E   ImportError: cannot import name 'serve_stdio_transport' from 'promptyoself_mcp_server' (/root/sanctum-letta-mcp/promptyoself_mcp_server.py)
 =========================== short test summary info ============================
-ERROR tests/unit/test_cli.py
-ERROR tests/unit/test_db.py
-ERROR tests/unit/test_letta_api.py
 ERROR tests/unit/test_mcp_server.py
-ERROR tests/unit/test_scheduler.py
-!!!!!!!!!!!!!!!!!!! Interrupted: 5 errors during collection !!!!!!!!!!!!!!!!!!!!
-========================= 1 warning, 5 errors in 1.35s =========================
+!!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!
+========================= 1 warning, 1 error in 0.80s ==========================

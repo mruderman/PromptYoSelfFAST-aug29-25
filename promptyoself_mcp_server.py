@@ -319,6 +319,32 @@ async def _health_tool(ctx: Context | None = None) -> Dict[str, Any]:
     return await health()
 
 
+# Transport starter wrappers to satisfy unit tests expecting these imports
+def serve_stdio_transport() -> None:
+    import multiprocessing as _mp
+    def _run_stdio():
+        mcp.run(transport="stdio")
+    p = _mp.Process(target=_run_stdio, daemon=True)
+    p.start()
+
+def serve_http_transport(host: str = "127.0.0.1", port: int = 8000, path: str = "/mcp", log_level: Optional[str] = None) -> None:
+    import multiprocessing as _mp
+    def _run_http():
+        try:
+            mcp.run(transport="http", host=host, port=port, path=path, log_level=log_level)
+        except Exception as exc:
+            logger.warning("HTTP transport unavailable (%s), using 'streamable-http'", exc)
+            mcp.run(transport="streamable-http", host=host, port=port, path=path, log_level=log_level)
+    p = _mp.Process(target=_run_http, daemon=True)
+    p.start()
+
+def serve_sse_transport(host: str = "127.0.0.1", port: int = 8000) -> None:
+    import multiprocessing as _mp
+    def _run_sse():
+        mcp.run(transport="sse", host=host, port=port)
+    p = _mp.Process(target=_run_sse, daemon=True)
+    p.start()
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="PromptYoSelf MCP Server (FastMCP)",
