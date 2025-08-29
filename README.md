@@ -1,395 +1,63 @@
-&gt; NOTE: This project now uses a FastMCP-based server that exposes the PromptYoSelf plugin directly. The legacy Sanctum HTTP/SSE server has been archived under `archive/sanctum/`. See the new quick start and docs below.
+> NOTE: This project now uses a FastMCP-based server that exposes the PromptYoSelf plugin directly. The legacy Sanctum HTTP/SSE server has been archived under `archive/sanctum/`.
 
-# New: PromptYoSelf FastMCP Server (Recommended)
-- Server file: [promptyoself_mcp_server.py](promptyoself_mcp_server.py:1)
-- Full guide: [README_FASTMCP.md](README_FASTMCP.md:1)
-- API reference: [docs/promptyoself-tools.md](docs/promptyoself-tools.md:1)
+# PromptYoSelf FastMCP Server
 
-Quick start:
-```bash
-# install server + test deps
-pip install -r requirements.txt
-# install PromptYoSelf plugin deps
-pip install -r promptyoself/requirements.txt
+This repository contains the PromptYoSelf plugin and a [FastMCP](https://gofastmcp.com/)-based server to expose it as a set of tools for a Model Context Protocol (MCP) client, such as a [Letta](https://docs.letta.com/) agent.
 
-# run in stdio (best for local agents)
-python promptyoself_mcp_server.py
+- **Server file:** [promptyoself_mcp_server.py](promptyoself_mcp_server.py)
+- **Developer Guide:** [promptyoself/AGENTS.md](promptyoself/AGENTS.md)
+- **API reference:** [docs/promptyoself-tools.md](docs/promptyoself-tools.md)
 
-# or run over HTTP
-python promptyoself_mcp_server.py --transport http --host 127.0.0.1 --port 8000 --path /mcp
-```
+## 🚀 Quick Start
 
----
-# Sanctum Letta MCP Server
+1.  **Install Dependencies**
 
-[![License: CC BY-SA 4.0](https://img.shields.io/badge/License-CC%20BY--SA%204.0-lightgrey.svg)](https://creativecommons.org/licenses/by-sa/4.0/)
-[![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
-[![MCP Protocol](https://img.shields.io/badge/MCP-Protocol%20Compliant-green.svg)](https://modelcontextprotocol.io/)
+    This project has two sets of dependencies. Install both.
+    ```bash
+    # Install server and test dependencies
+    pip install -r requirements.txt
 
-A powerful, plugin-based Model Context Protocol (MCP) server for the Sanctum Letta AI framework. This server provides seamless integration between AI clients and external tools through a robust plugin architecture.
+    # Install PromptYoSelf plugin dependencies
+    pip install -r promptyoself/requirements.txt
+    ```
 
-## 🚀 Features
+2.  **Run the Server**
 
-- **Plugin Architecture**: Easy-to-write plugins for any external service or tool
-- **MCP Protocol Compliant**: Full support for the Model Context Protocol specification
-- **SSE Transport**: Real-time server-sent events for efficient communication
-- **JSON-RPC 2.0**: Standardized request/response handling
-- **Auto-Discovery**: Automatic plugin detection and tool registration
-- **Health Monitoring**: Built-in health checks and status reporting
-- **Production Ready**: Comprehensive error handling and logging
+    The server can be run in two modes:
 
-## 📦 Installation
+    *   **Standard I/O (stdio):** This is the simplest mode and is best for local development or connecting to local agents.
+        ```bash
+        python promptyoself_mcp_server.py
+        ```
 
-### Prerequisites
-
-- Python 3.8 or higher
-- pip package manager
-
-### Quick Start
-
-1. **Clone the repository**
-   ```bash
-   git clone https://github.com/actuallyrizzn/sanctum-letta-mcp.git
-   cd sanctum-letta-mcp
-   ```
-
-2. **Create virtual environment**
-   ```bash
-   python -m venv venv
-   source venv/bin/activate  # On Windows: venv\Scripts\activate
-   ```
-
-3. **Install dependencies**
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-4. **Run the server**
-   ```bash
-   python smcp/mcp_server.py
-   ```
-
-The server will start on `http://localhost:8000` by default with **localhost + Docker container access** for development environments.
-
-### Security Features
-
-By default, the server binds to all interfaces (0.0.0.0) to allow connections from both the local machine and Docker containers running on the same host. This is ideal for development environments where Docker containers need to communicate with the MCP server.
-
-**For localhost-only access** (more restrictive):
-```bash
-python smcp/mcp_server.py --host 127.0.0.1
-```
-
-**To allow external connections** (use with caution):
-```bash
-python smcp/mcp_server.py --allow-external
-```
-
-**Custom port**:
-```bash
-python smcp/mcp_server.py --port 9000
-```
-
-**Custom host binding**:
-```bash
-python smcp/mcp_server.py --host 0.0.0.0 --port 8000
-```
-
-## 🔧 Configuration
-
-### Environment Variables
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `MCP_PORT` | `8000` | Port for the MCP server |
-| `MCP_PLUGINS_DIR` | `smcp/plugins/` | Directory containing plugins |
-| `MCP_HOST` | `0.0.0.0` | Host to bind to (default: all interfaces for Docker compatibility) |
-
-### Example Configuration
-
-```bash
-# Default: localhost + Docker containers
-python smcp/mcp_server.py
-
-# Custom port
-export MCP_PORT=9000
-python smcp/mcp_server.py
-
-# Localhost-only (more restrictive)
-python smcp/mcp_server.py --host 127.0.0.1
-
-# Custom plugins directory
-export MCP_PLUGINS_DIR=/path/to/custom/plugins
-python smcp/mcp_server.py
-```
-
-## 🔌 Plugin Development
-
-### Plugin Structure
-
-Each plugin should follow this directory structure:
-
-```
-plugins/
-├── your_plugin/
-│   ├── __init__.py
-│   ├── cli.py          # Main plugin interface
-│   └── README.md       # Plugin documentation
-```
-
-### Plugin Deployment with Symlinks
-
-The server supports symbolic links for flexible plugin deployment. You can centralize plugins in a designated location and use symlinks for discovery:
-
-#### Centralized Plugin Management
-
-```
-# Central plugin repository
-/opt/sanctum/plugins/
-├── botfather/
-├── devops/
-└── custom-plugin/
-
-# MCP server plugin directory with symlinks
-smcp/plugins/
-├── botfather -> /opt/sanctum/plugins/botfather
-├── devops -> /opt/sanctum/plugins/devops
-└── custom-plugin -> /opt/sanctum/plugins/custom-plugin
-```
-
-#### Benefits
-
-- **Separation of Concerns**: Keep MCP server code separate from plugin implementations
-- **Centralized Management**: Manage plugins in a designated repository
-- **Dynamic Loading**: Add/remove plugins by creating/removing symlinks
-- **Version Control**: Maintain plugins in separate repositories
-- **Deployment Flexibility**: Deploy plugins independently of the MCP server
-
-#### Environment Variable Override
-
-You can override the plugin directory using the `MCP_PLUGINS_DIR` environment variable:
-
-```bash
-# Use custom plugin directory
-export MCP_PLUGINS_DIR=/opt/sanctum/plugins
-python smcp/mcp_server.py
-```
-
-### Creating a Plugin
-
-1. **Create plugin directory**
-   ```bash
-   mkdir -p smcp/plugins/my_plugin
-   ```
-
-2. **Create the CLI interface** (`smcp/plugins/my_plugin/cli.py`)
-   ```python
-   #!/usr/bin/env python3
-   """
-   My Plugin CLI
-   
-   A sample plugin for the Sanctum Letta MCP Server.
-   """
-   
-   import argparse
-   import json
-   import sys
-   
-   def main():
-       parser = argparse.ArgumentParser(description="My Plugin CLI")
-       subparsers = parser.add_subparsers(dest="command", help="Available commands")
-       
-       # Add your command
-       cmd_parser = subparsers.add_parser("my-command", help="Execute my command")
-       cmd_parser.add_argument("--param", required=True, help="Required parameter")
-       cmd_parser.add_argument("--optional", default="default", help="Optional parameter")
-       
-       args = parser.parse_args()
-       
-       if args.command == "my-command":
-           result = execute_my_command(args.param, args.optional)
-           print(json.dumps(result))
-       else:
-           parser.print_help()
-           sys.exit(1)
-   
-   def execute_my_command(param, optional):
-       """Execute the main command logic."""
-       # Your plugin logic here
-       return {
-           "status": "success",
-           "param": param,
-           "optional": optional,
-           "message": "Command executed successfully"
-       }
-   
-   if __name__ == "__main__":
-       main()
-   ```
-
-3. **Make it executable**
-   ```bash
-   chmod +x smcp/plugins/my_plugin/cli.py
-   ```
-
-4. **Test your plugin**
-   ```bash
-   python smcp/plugins/my_plugin/cli.py my-command --param "test" --optional "value"
-   ```
-
-### Plugin Best Practices
-
-1. **Command Structure**: Use descriptive command names with hyphens
-2. **Parameter Validation**: Always validate required parameters
-3. **Error Handling**: Return meaningful error messages
-4. **JSON Output**: Return structured JSON for easy parsing
-5. **Documentation**: Include help text for all commands and parameters
-
-### Available Plugin Examples
-
-- **botfather**: Telegram Bot API integration
-- **devops**: Deployment and infrastructure management
-
-## 🔗 MCP Protocol Integration
-
-### Endpoints
-
-- **SSE Endpoint**: `GET /sse` - Server-sent events for real-time communication
-- **Message Endpoint**: `POST /messages/` - JSON-RPC 2.0 message handling
-
-### Protocol Flow
-
-1. **Connection**: Client establishes SSE connection
-2. **Initialization**: Client sends `initialize` request
-3. **Capability Exchange**: Server responds with available tools
-4. **Tool Execution**: Client can call registered tools
-5. **Event Streaming**: Server sends events via SSE
-
-### Example Client Integration
-
-```python
-import httpx
-import json
-
-async def connect_to_mcp():
-    base_url = "http://localhost:8000"
-    
-    # Initialize connection
-    init_request = {
-        "jsonrpc": "2.0",
-        "id": 1,
-        "method": "initialize",
-        "params": {
-            "protocolVersion": "2025-03-26",
-            "capabilities": {"tools": {}, "resources": {}, "prompts": {}},
-            "clientInfo": {"name": "my-client", "version": "1.0.0"}
-        }
-    }
-    
-    async with httpx.AsyncClient() as client:
-        response = await client.post(f"{base_url}/messages/", json=init_request)
-        data = response.json()
-        
-        # List available tools
-        tools_request = {
-            "jsonrpc": "2.0",
-            "id": 2,
-            "method": "tools/list"
-        }
-        
-        response = await client.post(f"{base_url}/messages/", json=tools_request)
-        tools = response.json()["result"]["tools"]
-        
-        # Call a tool
-        call_request = {
-            "jsonrpc": "2.0",
-            "id": 3,
-            "method": "tools/call",
-            "params": {
-                "name": "health",
-                "arguments": {}
-            }
-        }
-        
-        response = await client.post(f"{base_url}/messages/", json=call_request)
-        result = response.json()["result"]
-        
-        return result
-```
+    *   **HTTP:** This runs the server as a web service, which is necessary for connecting to remote agents (e.g., a Letta agent running in the cloud or a Docker container).
+        ```bash
+        python promptyoself_mcp_server.py --transport http --host 127.0.0.1 --port 8000 --path /mcp
+        ```
 
 ## 🧪 Testing
 
-### Running Tests
+This project uses `pytest` for testing. The test configuration is defined in `pytest.ini`.
 
+To run the full test suite, including coverage analysis:
 ```bash
-# Run all tests
-python -m pytest tests/ -v
-
-# Run specific test categories
-python -m pytest tests/unit/ -v
-python -m pytest tests/integration/ -v
-python -m pytest tests/e2e/ -v
-
-# Run with coverage
-python -m pytest tests/ --cov=smcp --cov-report=html
+pytest
 ```
 
-### Test Categories
+This will automatically:
+- Discover and run all tests in the `tests/` directory.
+- Measure code coverage for the `promptyoself_mcp_server` and `promptyoself` modules.
+- Generate a coverage report in the terminal and as an HTML report in the `htmlcov/` directory.
+- Fail the test run if code coverage is below 80%.
 
-- **Unit Tests**: Core functionality and plugin system
-- **Integration Tests**: MCP protocol and endpoint testing
-- **E2E Tests**: Complete workflow validation
-
-## 📊 Monitoring
-
-### Health Check
-
-The server provides a built-in health check tool:
-
+To run only a specific category of tests (e.g., unit tests):
 ```bash
-curl -X POST http://localhost:8000/messages/ \
-  -H "Content-Type: application/json" \
-  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"health","arguments":{}}}'
-```
-
-### Logging
-
-Logs are written to `mcp.log` and stdout. Configure logging levels in `smcp/mcp_server.py`.
-
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
-### Development Setup
-
-```bash
-# Install development dependencies
-pip install -r requirements-dev.txt
-
-# Run linting
-flake8 smcp/ tests/
-
-# Run type checking
-mypy smcp/
-
-# Run tests with coverage
-python -m pytest tests/ --cov=smcp --cov-report=html
+pytest tests/unit/
 ```
 
 ## 📄 License
 
 This project is licensed under the Creative Commons Attribution-ShareAlike 4.0 International License - see the [LICENSE](LICENSE) file for details.
-
-## 🙏 Acknowledgments
-
-- [Model Context Protocol](https://modelcontextprotocol.io/) for the protocol specification
-- [FastMCP](https://github.com/microsoft/fastmcp) for the server framework
-- The Sanctum team for the AI framework integration
-- The Letta team for the kernel for SanctumOS
 
 ## 📞 Support
 
@@ -398,7 +66,3 @@ For support, questions, or contributions:
 - **Author**: Mark Rizzn Hopkins
 - **Repository**: https://github.com/actuallyrizzn/sanctum-letta-mcp
 - **Issues**: https://github.com/actuallyrizzn/sanctum-letta-mcp/issues
-
----
-
-**Part of the Sanctum Suite** - A comprehensive AI framework for modern applications. 

@@ -1,4 +1,4 @@
-import mock
+from unittest import mock
 import pytest
 from sqlalchemy import inspect
 from datetime import datetime, timedelta

@@ -1,4 +1,4 @@
-import mock
+from unittest import mock
 import pytest
 from unittest.mock import patch
 from promptyoself.letta_api import (

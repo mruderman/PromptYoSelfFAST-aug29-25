@@ -1,4 +1,4 @@
-import mock
+from unittest import mock
 import pytest
 from promptyoself_mcp_server import health, serve_stdio_transport, serve_http_transport, serve_sse_transport
 

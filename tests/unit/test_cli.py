@@ -1,4 +1,4 @@
-import mock
+from unittest import mock
 import pytest
 from promptyoself.cli import register_prompt, list_prompts, cancel_prompt, test_connection, list_agents, execute_prompts, upload_tool
 

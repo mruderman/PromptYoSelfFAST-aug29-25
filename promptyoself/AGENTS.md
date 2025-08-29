@@ -1,294 +1,110 @@
-# CLAUDE.md - PromptYoSelf Plugin
-
-## ✅ **BREAKTHROUGH: ALL TOOL ATTACHMENT ISSUES RESOLVED! (2025-08-13)**
-
-### ✅ **Complete Success Summary**
-- **Status**: ✅ **100% RESOLVED** - All 6 promptyoself tools attached to target agent
-- **Target Agent**: Zhang (agent-ff18d65c-1f8f-4ca7-9013-2e4e526fd2f4) - 17 tools total  
-- **Tools Working**: register, list, test, cancel, execute, agents (all 6 functional)
-- **Authentication**: token-based auth fully operational
-- **Resolution Method**: Manual tool creation + agent attachment via letta-client
-
-### 🎉 **BREAKTHROUGH: HTTP Transport Success! (2025-08-13)**
-- **✅ COMPLETE RESOLUTION**: Successfully migrated from SSE to HTTP transport
-- **New URL**: https://smoke-drinking-docs-integrate.trycloudflare.com/mcp
-- **Transport**: Streamable HTTP (FastMCP v2.11.3)
-- **Tools Status**: ✅ All 6 promptyoself tools successfully registered and working
-- **Result**: Eliminated all Cloudflare SSE buffering issues completely
-
-### 🚀 **All Tools Successfully Registered (2025-08-13)**
-- ✅ `promptyoself_register` - Schedule new prompts
-- ✅ `promptyoself_list` - List existing schedules  
-- ✅ `promptyoself_cancel` - Cancel schedules
-- ✅ `promptyoself_execute` - Execute due prompts
-- ✅ `promptyoself_test` - Test Letta connection
-- ✅ `promptyoself_agents` - List available agents
-
-**Status**: 🟢 **PRODUCTION READY** - Ready for Letta ADE connection testing
+# PromptYoSelf Plugin Developer Guide
 
 ## Project Overview
 
-PromptYoSelf is a self-hosted prompt scheduler plugin for Letta agents, enabling temporal autonomy through scheduled message delivery. Part of the Sanctum Letta MCP server ecosystem, it allows AI agents to schedule prompts to themselves for future delivery with support for one-time, interval, daily, and cron-based schedules.
+PromptYoSelf is a self-hosted prompt scheduler plugin for the Letta AI framework, designed to be run as a tool server via FastMCP. It allows AI agents to schedule prompts for future delivery to themselves or other agents, supporting one-time, interval, and cron-based schedules.
 
-## Key Commands
+The system has undergone a significant architectural update. It now uses a unified database schema to potentially support both the CLI/MCP interface and a web interface, although the web interface components are not part of this plugin.
 
-### Running the Scheduler
+## External Resources
+
+This plugin interacts with two main external systems. The following links provide essential documentation for developers working on this plugin:
+
+*   **FastMCP Documentation:** `https://gofastmcp.com/llms.txt`
+*   **Letta SDK Documentation:** `https://docs.letta.com/llms.txt`
+
+## Core Architecture
+
+The plugin is composed of several key Python modules:
+
+1.  **`cli.py` (CLI and Tool Definitions):**
+    *   Provides a command-line interface for managing schedules using `argparse`.
+    *   Defines the `promptyoself_*` functions that are exposed as tools through the FastMCP server.
+    *   Contains an undocumented `upload` command for registering new tools with the Letta server.
+
+2.  **`db.py` (Database Layer):**
+    *   Uses SQLAlchemy to manage a SQLite database.
+    *   **Main Table:** `unified_reminders`. This is the primary table for all new schedules. It has a flexible structure intended to support multiple interfaces.
+    *   **Legacy Table:** `schedules`. This table (`PromptSchedule` model) is kept for backward compatibility but is not used by the core logic anymore.
+    *   **Adapter:** A `CLIReminderAdapter` is used to map data between the `unified_reminders` table and the format expected by the CLI tools, maintaining a consistent interface despite the schema change.
+
+3.  **`scheduler.py` (Scheduling Engine):**
+    *   Contains the logic for calculating when schedules should run next.
+    *   The `execute_due_prompts` function queries the database for due schedules, sends them to the target agent via the Letta API, and reschedules them if necessary.
+    *   Uses the `apscheduler` library to run the execution loop in the background (daemon mode).
+    *   Correctly operates on the new `UnifiedReminder` database objects.
+
+4.  **`letta_api.py` (Letta Integration):**
+    *   Manages all communication with the external Letta service using the `letta-client` SDK.
+    *   Handles authentication, agent validation, and prompt delivery.
+    *   Includes robust features like retry logic with exponential backoff and a specific fallback to a streaming API to handle a "ChatML bug".
+
+5.  **`promptyoself_mcp_server.py` (MCP Server):**
+    *   The main entry point for running the plugin as a service.
+    *   Uses the FastMCP framework to expose the functions from `cli.py` as tools that can be called by an MCP client (such as a Letta agent).
+
+## Database Schema
+
+The primary table is `unified_reminders`. The old `schedules` table is deprecated.
+
+**`unified_reminders` table:**
+
+| Column | Type | Description |
+| :--- | :--- | :--- |
+| `id` | Integer | Primary Key |
+| `message` | Text | The content of the prompt. |
+| `next_run` | DateTime | The timestamp for the next scheduled execution. |
+| `status` | String | The current status of the reminder (e.g., "pending"). |
+| `active` | Boolean | Whether the schedule is currently active. |
+| `schedule_type` | String | The type of schedule: `once`, `cron`, or `interval`. |
+| `schedule_value` | String | The value for the schedule (e.g., cron string, interval duration). |
+| `max_repetitions`| Integer | Optional limit for how many times an interval schedule should run. |
+| `repetition_count`| Integer | How many times an interval schedule has already run. |
+| `agent_id` | String | The ID of the target Letta agent. |
+| `...` | | Other fields for web UI integration (`task_id`, `user_id`, etc.). |
+
+## Key Commands (CLI)
+
+The command-line interface is the primary way to interact with the plugin manually.
+
 ```bash
-# Start the background scheduler daemon
-python -m promptyoself.cli execute --daemon
+# Register a one-time prompt
+python -m promptyoself.cli register --agent-id <agent_id> --prompt "My prompt" --time "2025-01-01T10:00:00"
 
-# Execute due prompts once
-python -m promptyoself.cli execute
+# Register a recurring prompt with a cron string
+python -m promptyoself.cli register --agent-id <agent_id> --prompt "Daily check-in" --cron "0 9 * * *"
 
-# Test Letta connection
-python -m promptyoself.cli test
-```
+# Register an interval-based prompt that runs every 15 minutes
+python -m promptyoself.cli register --agent-id <agent_id> --prompt "Ping" --every "15m"
 
-### Managing Schedules
-```bash
-# Create a one-time schedule
-python -m promptyoself.cli register <agent_id> "prompt text" once "2024-12-25 10:00:00"
-
-# Create an interval schedule (every 30 minutes)
-python -m promptyoself.cli register <agent_id> "prompt text" interval "30 minutes"
-
-# Create a daily schedule
-python -m promptyoself.cli register <agent_id> "prompt text" daily "18:00"
-
-# Create a cron schedule
-python -m promptyoself.cli register <agent_id> "prompt text" cron "0 9 * * MON-FRI"
-
-# List all schedules
+# List all active schedules
 python -m promptyoself.cli list
 
-# List schedules for specific agent
-python -m promptyoself.cli list --agent-id <agent_id>
+# Cancel a schedule by its ID
+python -m promptyoself.cli cancel --id <schedule_id>
 
-# Cancel a schedule
-python -m promptyoself.cli cancel <schedule_id>
-```
+# Execute all due prompts once
+python -m promptyoself.cli execute
 
-### Testing and Development
-```bash
-# Run from the sanctum-letta-mcp directory
-cd /root/Compose-Main/config/letta/sanctum-letta-mcp
+# Run the scheduler in a continuous loop (daemon mode)
+python -m promptyoself.cli execute --loop --interval 60
 
-# List available agents
+# Test the connection to the Letta server
+python -m promptyoself.cli test
+
+# List all available agents on the Letta server
 python -m promptyoself.cli agents
 
-# Check database status
-sqlite3 promptyoself.db "SELECT COUNT(*) FROM schedules WHERE active = 1;"
-
-# View logs
-tail -f promptyoself.log
-tail -f promptyoself_errors.log
-
-# Test API endpoints (when MCP server is running)
-curl http://localhost:8000/api/schedules
-curl http://localhost:8000/api/agents
+# Upload a new tool to the Letta server (undocumented feature)
+python -m promptyoself.cli upload --source-code "def my_tool(): ..." --description "My new tool"
 ```
 
-## Architecture
+## Testing
 
-### Core Components
+The project includes unit, integration, and end-to-end tests using `pytest`.
 
-1. **Database Layer (`db.py`)**: SQLite database with schedule management
-   - Lazy initialization pattern for database creation
-   - CRUD operations with performance indexes
-   - Cleanup operations for old schedules
-   - Statistics and monitoring functions
+*   **Test Infrastructure (`tests/conftest.py`):** Provides fixtures for running tests against an in-memory server and a live HTTP server process. This part of the test suite is well-maintained.
+*   **Unit Tests (`tests/unit/`):** These tests are intended to test individual modules in isolation. **WARNING:** Most of these tests are severely outdated and broken due to the architectural changes. They need to be rewritten.
+*   **Integration & E2E Tests (`tests/integration/`, `tests/e2e/`):** These tests use the `fastmcp` client to test the server. They are in better shape but are very basic and could be expanded.
 
-2. **Scheduler Engine (`scheduler.py`)**: Background execution engine
-   - APScheduler for background tasks
-   - Cron expression parsing with croniter
-   - Multi-format schedule calculation
-   - Robust error handling with retry logic
-
-3. **Letta Integration (`letta_api.py`)**: Agent communication
-   - Singleton client pattern
-   - Multiple authentication methods (API key, password, dummy)
-   - Retry logic with exponential backoff
-   - ChatML bug workaround with streaming fallback
-
-4. **CLI Interface (`cli.py`)**: Command-line management
-   - Complete schedule management commands
-   - Agent validation and testing
-   - Daemon mode for continuous execution
-
-5. **Logging System (`logging_config.py`)**: Advanced structured logging
-   - JSON structured logging
-   - Automatic rotation and error separation
-   - Performance timing context managers
-
-### Database Schema
-
-```sql
-schedules table:
-- id: Primary key
-- agent_id: Target Letta agent
-- prompt_text: Message content
-- schedule_type: 'once', 'cron', 'interval', 'daily'
-- schedule_value: Schedule configuration
-- next_run: Next execution timestamp
-- active: Boolean status
-- created_at: Creation timestamp
-- last_run: Last execution timestamp
-- max_repetitions: Optional limit (NULL = infinite)
-- repetition_count: Current execution count
-
-Indexes:
-- idx_schedules_due: For finding due schedules
-- idx_schedules_agent_active: For agent queries
-- idx_schedules_created_at: For historical analysis
-```
-
-### API Integration
-
-The plugin exposes REST API endpoints through the MCP server:
-
-```python
-# Base URL: http://localhost:8000
-
-GET /api/schedules          # List schedules with filtering
-GET /api/schedules/calendar # Calendar-formatted events
-GET /api/agents             # Available Letta agents
-GET /api/stats              # Database statistics
-```
-
-## Important Configuration
-
-### Environment Variables
-```bash
-# Letta Connection
-LETTA_API_KEY=your-api-key           # For cloud authentication
-LETTA_BASE_URL=http://localhost:8283 # For self-hosted
-LETTA_SERVER_PASSWORD=password       # Alternative auth
-
-# Database
-PROMPTYOSELF_DB=/path/to/promptyoself.db
-
-# Logging
-PROMPTYOSELF_LOG_LEVEL=INFO
-PROMPTYOSELF_LOG_FILE=/path/to/promptyoself.log
-PROMPTYOSELF_LOG_FORMAT=json  # or 'text'
-```
-
-### Default Settings
-- Scheduler interval: 60 seconds
-- Database: SQLite with automatic initialization
-- Logging: Multi-format with rotation
-- Authentication: Flexible fallback (API key → password → dummy)
-
-## Development Patterns
-
-### Error Handling Strategy
-- All operations wrapped in try-catch with structured logging
-- Retry logic with exponential backoff for Letta API calls
-- Graceful degradation when services unavailable
-- ChatML compatibility workaround using streaming API
-
-### Logging Patterns
-```python
-# Use structured logging with context
-from smcp.plugins.promptyoself.logging_config import log_operation
-
-with log_operation("schedule_create", {"agent_id": agent_id}):
-    # Operation code here
-    pass
-```
-
-### Database Operations
-```python
-# Always use context managers for database operations
-from smcp.plugins.promptyoself.db import get_db_session
-
-with get_db_session() as session:
-    # Database operations here
-    session.commit()
-```
-
-### Letta API Calls
-```python
-# Use the singleton client with error handling
-from smcp.plugins.promptyoself.letta_api import get_letta_client, send_prompt_to_agent
-
-client = get_letta_client()
-success = send_prompt_to_agent(agent_id, prompt_text, schedule_id)
-```
-
-## Common Workflows
-
-### Adding New Schedule Types
-1. Update `schedule_type` enum in database schema
-2. Add calculation logic in `scheduler.calculate_next_run_for_schedule()`
-3. Update CLI argument parser in `cli.py`
-4. Add validation in `db.add_schedule()`
-
-### Testing Schedule Execution
-1. Create a test schedule with short interval
-2. Run daemon mode: `python -m promptyoself.cli execute --daemon`
-3. Monitor logs: `tail -f promptyoself.log`
-4. Check database: `sqlite3 promptyoself.db "SELECT * FROM schedules;"`
-
-### Debugging Connection Issues
-1. Test connection: `python -m promptyoself.cli test`
-2. Check environment variables are set correctly
-3. Verify Letta server is running: `curl http://localhost:8283/v1/health/`
-4. Review error logs: `tail -f promptyoself_errors.log`
-
-### Database Maintenance
-```bash
-# Backup database
-cp promptyoself.db promptyoself.db.backup
-
-# Clean old schedules
-sqlite3 promptyoself.db "DELETE FROM schedules WHERE active = 0 AND last_run < datetime('now', '-30 days');"
-
-# Reset schedule counts
-sqlite3 promptyoself.db "UPDATE schedules SET repetition_count = 0 WHERE active = 1;"
-```
-
-## Plugin Integration with MCP Server
-
-The plugin is auto-discovered by the MCP server through:
-1. Presence of `cli.py` in plugin directory
-2. Dynamic tool registration based on CLI help output
-3. MCP-compliant tool execution through `mcp_server.py`
-
-To verify integration:
-```bash
-# Check MCP server logs
-docker compose logs sanctum-mcp | grep promptyoself
-
-# Test MCP tool execution
-curl -X POST http://localhost:8000/execute \
-  -H "Content-Type: application/json" \
-  -d '{"tool": "promptyoself", "args": ["list"]}'
-```
-
-## Troubleshooting
-
-### Common Issues
-
-1. **"No Letta client configured"**: Set LETTA_API_KEY or LETTA_SERVER_PASSWORD
-2. **"Agent not found"**: Verify agent ID with `cli agents` command
-3. **Database locked**: Stop duplicate scheduler processes
-4. **ChatML errors**: Automatic fallback to streaming API should handle this
-5. **Schedules not executing**: Check scheduler daemon is running and logs for errors
-
-### Performance Considerations
-
-- Database indexes optimize query performance for large schedule counts
-- Cleanup operations prevent unbounded database growth
-- Singleton client pattern reduces connection overhead
-- Batch processing of due schedules minimizes API calls
-
-## Key Files Reference
-
-- `db.py`: Database models and operations (250+ lines)
-- `scheduler.py`: Scheduling engine (170+ lines)
-- `letta_api.py`: Letta integration (230+ lines)
-- `cli.py`: Command-line interface (270+ lines)
-- `logging_config.py`: Logging configuration (140+ lines)
-- `promptyoself.db`: Main database with active schedules
-- `api/schedules_api.py`: REST API endpoints (in parent directory)
+To run the full test suite, use the `pytest` command from the root of the repository. The configuration in `pytest.ini` will automatically pick up the correct settings.

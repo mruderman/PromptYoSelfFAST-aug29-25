@@ -1,4 +1,4 @@
-import mock
+from unittest import mock
 import pytest
 from croniter import croniter
 from datetime import datetime, timedelta
