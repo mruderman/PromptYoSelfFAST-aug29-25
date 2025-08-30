@@ -1,60 +1,54 @@
-from unittest import mock
 import pytest
-from promptyoself_mcp_server import health, serve_stdio_transport, serve_http_transport, serve_sse_transport
+from unittest.mock import patch
 
-@mock.patch("fastapi.FastAPI")
-@mock.patch("uvicorn.run")
-def test_health(mock_fastapi, mock_uvicorn, mock_env_vars):
-    app = health()
-    assert app.title == "Promptyoself MCP Server"
-    assert "health" in app.routes
-    mock_uvicorn.assert_called_once()
+@pytest.mark.asyncio
+async def test_health_tool(mcp_in_memory_client):
+    result = await mcp_in_memory_client.call_tool("health")
+    assert result.data["status"] == "healthy"
 
-@mock.patch("multiprocessing.Process")
-def test_stdio_transport(mock_process, mock_env_vars):
-    serve_stdio_transport()
-    mock_process.assert_called_once()
+@pytest.mark.asyncio
+@patch("promptyoself_mcp_server._register_prompt", return_value={"status": "success", "id": 123})
+async def test_register_tool(mock_register, mcp_in_memory_client):
+    result = await mcp_in_memory_client.call_tool(
+        "promptyoself_register",
+        {"agent_id": "test-agent", "prompt": "test prompt", "time": "2025-01-01T00:00:00"}
+    )
+    assert result.data["status"] == "success"
+    assert result.data["id"] == 123
+    mock_register.assert_called_once()
 
-@mock.patch("multiprocessing.Process")
-def test_http_transport(mock_process, mock_env_vars):
-    serve_http_transport(host="0.0.0.0", port=8000)
-    mock_process.assert_called_once()
+@pytest.mark.asyncio
+@patch("promptyoself_mcp_server._list_prompts", return_value={"status": "success", "schedules": []})
+async def test_list_tool(mock_list, mcp_in_memory_client):
+    result = await mcp_in_memory_client.call_tool("promptyoself_list", {"agent_id": "test-agent"})
+    assert result.data["status"] == "success"
+    mock_list.assert_called_once()
 
-@mock.patch("multiprocessing.Process")
-def test_sse_transport(mock_process, mock_env_vars):
-    serve_sse_transport(host="0.0.0.0", port=8000)
-    mock_process.assert_called_once()
+@pytest.mark.asyncio
+@patch("promptyoself_mcp_server._cancel_prompt", return_value={"status": "success", "cancelled_id": 456})
+async def test_cancel_tool(mock_cancel, mcp_in_memory_client):
+    result = await mcp_in_memory_client.call_tool("promptyoself_cancel", {"schedule_id": 456})
+    assert result.data["status"] == "success"
+    assert result.data["cancelled_id"] == 456
+    mock_cancel.assert_called_once()
 
-@mock.patch("promptyoself_mcp_server.health")
-@mock.patch("promptyoself_mcp_server.serve_stdio_transport")
-@mock.patch("promptyoself_mcp_server.serve_http_transport")
-@mock.patch("promptyoself_mcp_server.serve_sse_transport")
-def test_startup_order(mock_health, mock_stdio, mock_http, mock_sse, mock_env_vars):
-    # Simulate startup sequence
-    serve_stdio_transport()
-    serve_http_transport(host="0.0.0.0", port=8000)
-    serve_sse_transport(host="0.0.0.0", port=8000)
-    assert mock_stdio.called_before(mock_http)
-    assert mock_stdio.called_before(mock_sse)
-    assert mock_health.called_after(mock_stdio)
+@pytest.mark.asyncio
+@patch("promptyoself_mcp_server._execute_prompts", return_value={"status": "success", "executed": []})
+async def test_execute_tool(mock_execute, mcp_in_memory_client):
+    result = await mcp_in_memory_client.call_tool("promptyoself_execute")
+    assert result.data["status"] == "success"
+    mock_execute.assert_called_once()
 
-@mock.patch("promptyoself_mcp_server.serve_stdio_transport")
-@mock.patch("promptyoself_mcp_server.serve_http_transport")
-@mock.patch("promptyoself_mcp_server.serve_sse_transport")
-def test_error_handling(mock_stdio, mock_http, mock_sse, mock_env_vars):
-    # Simulate errors
-    mock_stdio.side_effect = Exception("STDIO transport failed")
-    mock_http.side_effect = Exception("HTTP transport failed")
-    mock_sse.side_effect = Exception("SSE transport failed")
-    
-    with pytest.raises(Exception):
-        serve_stdio_transport()
-    with pytest.raises(Exception):
-        serve_http_transport(host="0.0.0.0", port=8000)
-    with pytest.raises(Exception):
-        serve_sse_transport(host="0.0.0.0", port=8000)
+@pytest.mark.asyncio
+@patch("promptyoself_mcp_server._test_connection", return_value={"status": "success"})
+async def test_test_tool(mock_test, mcp_in_memory_client):
+    result = await mcp_in_memory_client.call_tool("promptyoself_test")
+    assert result.data["status"] == "success"
+    mock_test.assert_called_once()
 
-@mock.patch("promptyoself_mcp_server.logging_config.get_logger")
-def test_logging(mock_logger, mock_env_vars):
-    health()
-    mock_logger.assert_called_once_with("promptyoself.mcp_server")
+@pytest.mark.asyncio
+@patch("promptyoself_mcp_server._list_agents", return_value={"status": "success", "agents": []})
+async def test_agents_tool(mock_list_agents, mcp_in_memory_client):
+    result = await mcp_in_memory_client.call_tool("promptyoself_agents")
+    assert result.data["status"] == "success"
+    mock_list_agents.assert_called_once()

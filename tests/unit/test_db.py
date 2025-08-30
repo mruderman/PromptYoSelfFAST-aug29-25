@@ -1,139 +1,154 @@
-from unittest import mock
 import pytest
-from sqlalchemy import inspect
+import os
 from datetime import datetime, timedelta
-from sqlalchemy.exc import SQLAlchemyError
-from promptyoself.db import initialize_db, add_schedule, list_schedules, get_schedule, update_schedule, cancel_schedule, get_due_schedules, cleanup_old_schedules, get_database_stats
+from sqlalchemy import inspect
+from sqlalchemy.orm import Session
+from promptyoself import db
+from promptyoself.db import UnifiedReminder, PromptSchedule, CLIReminderAdapter
 
+# Fixture for a clean, in-memory database for each test
 @pytest.fixture
-def mock_env_vars(monkeypatch):
-    monkeypatch.setenv("LETTA_API_KEY", "test-api-key")
+def session():
+    # Use in-memory SQLite database for tests
+    os.environ["PROMPTYOSELF_DB"] = ":memory:"
+    # Reset any existing database connection and create a new engine
+    db.reset_db_connection()
+    # Initialize the database with the new engine
+    db.initialize_db()
+    # Get a session from the new factory
+    db_session = db.get_session()
+    yield db_session
+    db_session.close()
+    # Clean up the environment variable
+    del os.environ["PROMPTYOSELF_DB"]
 
-@mock.patch("promptyoself.db.SessionLocal")
-@mock.patch("promptyoself.db.Base.metadata.create_all")
-def test_initialize_db(mock_session_local, mock_create_all, mock_env_vars):
-    initialize_db()
-    mock_create_all.assert_called_once()
-    mock_session_local.assert_called_once()
+def test_initialize_db(session: Session):
+    # Check if the tables were created
+    inspector = inspect(db.get_engine())
+    assert "unified_reminders" in inspector.get_table_names()
+    assert "schedules" in inspector.get_table_names()
 
-@mock.patch("promptyoself.db.SessionLocal")
-@mock.patch("promptyoself.db.UnifiedReminder")
-def test_add_schedule(mock_session_local, mock_unified_reminder, mock_env_vars):
-    mock_session = mock_session_local.return_value
-    mock_session.add.return_value = None
-    mock_session.commit.return_value = None
+def test_add_schedule(session: Session):
+    # Add a new schedule
+    next_run_time = datetime.utcnow() + timedelta(hours=1)
+    schedule_id = db.add_schedule(
+        agent_id="test_agent",
+        prompt_text="Test prompt",
+        schedule_type="once",
+        schedule_value="2025-01-01T12:00:00",
+        next_run=next_run_time,
+        max_repetitions=1
+    )
+    assert isinstance(schedule_id, int)
+
+    # Verify the schedule was added
+    reminder = session.query(UnifiedReminder).filter_by(id=schedule_id).one()
+    assert reminder.agent_id == "test_agent"
+    assert reminder.message == "Test prompt"
+    assert reminder.schedule_type == "once"
+    assert reminder.next_run == next_run_time
+    assert reminder.max_repetitions == 1
+
+def test_list_schedules(session: Session):
+    # Add some schedules
+    db.add_schedule("agent1", "prompt1", "once", "2025-01-01T12:00:00", datetime.utcnow())
+    db.add_schedule("agent1", "prompt2", "cron", "* * * * *", datetime.utcnow())
+    db.add_schedule("agent2", "prompt3", "interval", "1h", datetime.utcnow())
     
-    result = add_schedule("agent-123", "Test prompt", "cron", "* * * * *", datetime(2023, 1, 1))
-    assert result is not None
-    mock_session.add.assert_called_once()
-    mock_session.commit.assert_called_once()
-
-@mock.patch("promptyoself.db.SessionLocal")
-@mock.patch("promptyoself.db.UnifiedReminder")
-def test_list_schedules(mock_session_local, mock_unified_reminder, mock_env_vars):
-    mock_session = mock_session_local.return_value
-    mock_query = mock_session.query.return_value
-    mock_query.all.return_value = [{"id": 1, "agent_id": "agent-123", "message": "Test"}]
+    # List all schedules
+    schedules = db.list_schedules()
+    assert len(schedules) == 3
     
-    result = list_schedules()
-    assert len(result) == 1
-    mock_session.query.assert_called_once()
-
-@mock.patch("promptyoself.db.SessionLocal")
-@mock.patch("promptyoself.db.UnifiedReminder")
-def test_get_schedule(mock_session_local, mock_unified_reminder, mock_env_vars):
-    mock_session = mock_session_local.return_value
-    mock_query = mock_session.query.return_value
-    mock_query.first.return_value = {"id": 1, "agent_id": "agent-123", "message": "Test"}
+    # List schedules for a specific agent
+    agent1_schedules = db.list_schedules(agent_id="agent1")
+    assert len(agent1_schedules) == 2
     
-    result = get_schedule(1)
-    assert result["id"] == 1
-    mock_query.filter.assert_called_once()
+    # List only active schedules (default)
+    active_schedules = db.list_schedules(active_only=True)
+    assert len(active_schedules) == 3
 
-@mock.patch("promptyoself.db.SessionLocal")
-@mock.patch("promptyoself.db.UnifiedReminder")
-def test_update_schedule(mock_session_local, mock_unified_reminder, mock_env_vars):
-    mock_session = mock_session_local.return_value
-    mock_session.commit.return_value = None
+def test_get_schedule(session: Session):
+    schedule_id = db.add_schedule("agent1", "prompt1", "once", "2025-01-01T12:00:00", datetime.utcnow())
     
-    result = update_schedule(1, message="Updated prompt")
-    assert result is True
-    mock_session.commit.assert_called_once()
+    schedule = db.get_schedule(schedule_id)
+    assert schedule is not None
+    assert schedule["id"] == schedule_id
+    assert schedule["agent_id"] == "agent1"
+    
+    # Test getting a non-existent schedule
+    non_existent_schedule = db.get_schedule(999)
+    assert non_existent_schedule is None
 
-@mock.patch("promptyoself.db.SessionLocal")
-@mock.patch("promptyoself.db.UnifiedReminder")
-def test_cancel_schedule(mock_session_local, mock_unified_reminder, mock_env_vars):
-    mock_session = mock_session_local.return_value
-    mock_session.commit.return_value = None
+def test_update_schedule(session: Session):
+    schedule_id = db.add_schedule("agent1", "prompt1", "once", "2025-01-01T12:00:00", datetime.utcnow())
     
-    result = cancel_schedule(1)
-    assert result is True
-    mock_session.commit.assert_called_once()
+    # Update the prompt text
+    updated = db.update_schedule(schedule_id, prompt_text="Updated prompt")
+    assert updated is True
+    
+    schedule = db.get_schedule(schedule_id)
+    assert schedule["prompt_text"] == "Updated prompt"
 
-@mock.patch("promptyoself.db.SessionLocal")
-@mock.patch("promptyoself.db.UnifiedReminder")
-def test_get_due_schedules(mock_session_local, mock_unified_reminder, mock_env_vars):
-    mock_session = mock_session_local.return_value
-    mock_query = mock_session.query.return_value
-    mock_query.all.return_value = [{"id": 1, "agent_id": "agent-123", "message": "Test"}]
+def test_cancel_schedule(session: Session):
+    schedule_id = db.add_schedule("agent1", "prompt1", "once", "2025-01-01T12:00:00", datetime.utcnow())
     
-    result = get_due_schedules()
-    assert len(result) == 1
-    mock_query.filter.assert_called_once()
+    # Cancel the schedule
+    cancelled = db.cancel_schedule(schedule_id)
+    assert cancelled is True
+    
+    schedule = db.get_schedule(schedule_id)
+    assert schedule["active"] is False
 
-@mock.patch("promptyoself.db.SessionLocal")
-@mock.patch("promptyoself.db.UnifiedReminder")
-def test_cleanup_old_schedules(mock_session_local, mock_unified_reminder, mock_env_vars):
-    mock_session = mock_session_local.return_value
-    mock_query = mock_session.query.return_value
-    mock_query.delete.return_value = 5
+def test_get_due_schedules(session: Session):
+    # Add a due schedule
+    db.add_schedule("agent1", "due_prompt", "once", "2025-01-01T12:00:00", datetime.utcnow() - timedelta(minutes=1))
+    # Add a future schedule
+    db.add_schedule("agent2", "future_prompt", "once", "2025-01-01T12:00:00", datetime.utcnow() + timedelta(minutes=1))
     
-    result = cleanup_old_schedules(days=30)
-    assert result == 5
-    mock_query.filter.assert_called_once()
+    due_schedules = db.get_due_schedules()
+    assert len(due_schedules) == 1
+    assert due_schedules[0].agent_id == "agent1"
 
-@mock.patch("promptyoself.db.inspect")
-def test_get_database_stats(mock_inspect, mock_env_vars):
-    mock_inspector = mock_inspect.return_value
-    mock_inspector.get_table_names.return_value = ["unified_reminders", "schedules"]
-    mock_inspector.get_columns.return_value = [{"name": "id"}, {"name": "message"}]
-    
-    result = get_database_stats()
-    assert "tables" in result
-    assert len(result["tables"]) == 2
+def test_cleanup_old_schedules(session: Session):
+    # Add an old, inactive schedule
+    old_inactive_time = datetime.utcnow() - timedelta(days=40)
+    reminder = CLIReminderAdapter.create_from_cli_args(
+        agent_id="test_agent",
+        prompt_text="Old prompt",
+        schedule_type="once",
+        schedule_value="2024-01-01T12:00:00",
+        next_run=old_inactive_time
+    )
+    reminder.active = False
+    reminder.created_at = old_inactive_time
+    session.add(reminder)
+    session.commit()
 
-@mock.patch("promptyoself.db.SessionLocal")
-@mock.patch("promptyoself.db.UnifiedReminder")
-def test_add_schedule_error(mock_session_local, mock_unified_reminder, mock_env_vars):
-    mock_session = mock_session_local.return_value
-    mock_session.add.side_effect = SQLAlchemyError("Database error")
-    
-    with pytest.raises(SQLAlchemyError):
-        add_schedule("agent-123", "Test prompt", "cron", "* * * * *", datetime(2023, 1, 1))
+    # Add a new inactive schedule (should not be deleted)
+    new_inactive_time = datetime.utcnow() - timedelta(days=10)
+    reminder2 = CLIReminderAdapter.create_from_cli_args(
+        agent_id="test_agent_2",
+        prompt_text="Newer prompt",
+        schedule_type="once",
+        schedule_value="2024-01-01T12:00:00",
+        next_run=new_inactive_time
+    )
+    reminder2.active = False
+    reminder2.created_at = new_inactive_time
+    session.add(reminder2)
+    session.commit()
 
-@mock.patch("promptyoself.db.SessionLocal")
-@mock.patch("promptyoself.db.UnifiedReminder")
-def test_list_schedules_error(mock_session_local, mock_unified_reminder, mock_env_vars):
-    mock_session = mock_session_local.return_value
-    mock_session.query.side_effect = SQLAlchemyError("Database error")
-    
-    with pytest.raises(SQLAlchemyError):
-        list_schedules()
+    deleted_count = db.cleanup_old_schedules(days_old=30)
+    assert deleted_count == 1
 
-@mock.patch("promptyoself.db.SessionLocal")
-@mock.patch("promptyoself.db.UnifiedReminder")
-def test_get_due_schedules_error(mock_session_local, mock_unified_reminder, mock_env_vars):
-    mock_session = mock_session_local.return_value
-    mock_session.query.side_effect = SQLAlchemyError("Database error")
-    
-    with pytest.raises(SQLAlchemyError):
-        get_due_schedules()
+    remaining_reminders = session.query(UnifiedReminder).all()
+    assert len(remaining_reminders) == 1
+    assert remaining_reminders[0].agent_id == "test_agent_2"
 
-@mock.patch("promptyoself.db.SessionLocal")
-@mock.patch("promptyoself.db.UnifiedReminder")
-def test_cleanup_old_schedules_error(mock_session_local, mock_unified_reminder, mock_env_vars):
-    mock_session = mock_session_local.return_value
-    mock_session.query.side_effect = SQLAlchemyError("Database error")
-    
-    with pytest.raises(SQLAlchemyError):
-        cleanup_old_schedules(days=30)
+def test_get_database_stats(session: Session):
+    db.add_schedule("agent1", "prompt1", "once", "2025-01-01T12:00:00", datetime.utcnow())
+    stats = db.get_database_stats()
+    assert stats["total_reminders"] == 1
+    assert stats["active_reminders"] == 1
+    assert stats["cli_reminders"] == 1
+    assert "database_size_bytes" in stats

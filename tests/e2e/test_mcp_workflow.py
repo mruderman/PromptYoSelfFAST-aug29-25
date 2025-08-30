@@ -59,3 +59,46 @@ class TestMCPWorkflowHTTP:
         assert "letta_base_url" in data
         assert "db" in data
         assert "auth_set" in data
+
+    @pytest.mark.asyncio
+    async def test_full_workflow(self, http_client: "Client"):
+        # 1. Register a prompt
+        register_result = await http_client.call_tool(
+            "promptyoself_register",
+            {
+                "agent_id": "e2e-test-agent",
+                "prompt": "e2e test prompt",
+                "time": "2025-12-31T23:59:59",
+                "skip_validation": True,
+            },
+        )
+        reg_data = register_result.structured_content
+        assert reg_data["status"] == "success"
+        schedule_id = reg_data["id"]
+
+        # 2. List prompts and verify the new one is there
+        list_result = await http_client.call_tool(
+            "promptyoself_list", {"agent_id": "e2e-test-agent"}
+        )
+        list_data = list_result.structured_content
+        assert list_data["status"] == "success"
+        assert any(s["id"] == schedule_id for s in list_data["schedules"])
+
+        # 3. Cancel the prompt
+        cancel_result = await http_client.call_tool(
+            "promptyoself_cancel", {"schedule_id": schedule_id}
+        )
+        cancel_data = cancel_result.structured_content
+        assert cancel_data["status"] == "success"
+
+        # 4. List prompts again (including cancelled) and verify it's inactive
+        list_all_result = await http_client.call_tool(
+            "promptyoself_list",
+            {"agent_id": "e2e-test-agent", "include_cancelled": True},
+        )
+        list_all_data = list_all_result.structured_content
+        cancelled_schedule = next(
+            (s for s in list_all_data["schedules"] if s["id"] == schedule_id), None
+        )
+        assert cancelled_schedule is not None
+        assert cancelled_schedule["active"] is False
