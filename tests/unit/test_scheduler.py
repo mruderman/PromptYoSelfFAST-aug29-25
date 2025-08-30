@@ -101,7 +101,7 @@ def test_execute_due_prompts_delivery_failure(mock_send_prompt, session):
     # Verify the schedule is still active and next_run is not changed
     updated_schedule = db.get_schedule(schedule_id)
     assert updated_schedule["active"] is True
-    assert datetime.fromisoformat(updated_schedule["next_run"]).timestamp() == pytest.approx(next_run_time.timestamp())
+    assert datetime.fromisoformat(updated_schedule["next_run"]) == next_run_time
 
 @patch("promptyoself.scheduler.send_prompt_to_agent", return_value=True)
 def test_execute_due_prompts_max_repetitions(mock_send_prompt, session):
