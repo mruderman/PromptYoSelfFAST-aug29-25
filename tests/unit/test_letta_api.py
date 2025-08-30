@@ -8,8 +8,10 @@ TEST_AGENT_ID = "agent-1a4a5989-ab98-478f-9b1f-bbece814ed7a"
 @pytest.fixture(scope="function")
 def live_letta_server(monkeypatch):
     """Fixture to configure the Letta client for a live server."""
-    monkeypatch.setenv("LETTA_BASE_URL", "https://cyansociety.a.pinggy.link/")
-    monkeypatch.setenv("LETTA_SERVER_PASSWORD", "TWIJftq/ufbbxo8w51m/BQ1wBNrZb/JTlmnop")
+    letta_password = os.environ.get("LETTA_SERVER_PASSWORD")
+    if not letta_password:
+        pytest.skip("Environment variable LETTA_SERVER_PASSWORD not set. Skipping tests that require live Letta server.")
+    monkeypatch.setenv("LETTA_SERVER_PASSWORD", letta_password)
     # Reset the client to ensure it picks up the new env vars
     letta_api._letta_client = None
     yield
