@@ -43,4 +43,4 @@ dist/
 build/ 
 
 # Secrets
-*.env
+.env
