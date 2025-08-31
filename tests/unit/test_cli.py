@@ -126,7 +126,8 @@ def test_argparse_no_schedule_option(mock_dependencies):
 @pytest.mark.unit
 def test_argparse_multiple_schedule_options(mock_dependencies):
     """Test for error if multiple schedule options are provided."""
-    run_main_with_args(['register', '--agent-id', 'a', '--prompt', 'p', '--time', 'now', '--cron', '*'], expected_exit_code=1)
+    valid_time = (datetime.datetime.now() + datetime.timedelta(hours=1)).isoformat()
+    run_main_with_args(['register', '--agent-id', 'a', '--prompt', 'p', '--time', valid_time, '--cron', '*'], expected_exit_code=1)
 
 @pytest.mark.unit
 def test_register_invalid_cron(mock_dependencies):
