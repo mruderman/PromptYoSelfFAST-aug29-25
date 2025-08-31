@@ -59,6 +59,16 @@ pytest tests/unit/
 
 This project is licensed under the Creative Commons Attribution-ShareAlike 4.0 International License - see the [LICENSE](LICENSE) file for details.
 
+## 🔒 Security
+
+### History Scrub Documentation
+
+If you need to remove sensitive information from Git history, see:
+- **Documentation**: [docs/history-scrub.md](docs/history-scrub.md)
+- **Helper Script**: [scripts/scrub-password-history.sh](scripts/scrub-password-history.sh)
+
+⚠️ **Warning**: History rewriting operations are destructive and require careful coordination.
+
 ## 📞 Support
 
 For support, questions, or contributions:
