@@ -43,7 +43,6 @@ dist/
 build/ 
 
 # Secrets
-.env
 .env.*
 !.env.example
 *.db
