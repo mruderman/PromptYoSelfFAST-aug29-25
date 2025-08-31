@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-PromptYoSelf is a self-hosted prompt scheduler system built around a FastMCP server that exposes scheduling functionality as Model Context Protocol (MCP) tools for AI agents, particularly Letta agents. The system allows AI agents to schedule prompts to themselves for future delivery with support for one-time, interval, daily, and cron-based schedules.
+PromptYoSelf is a self-hosted prompt scheduler system built around a FastMCP server that exposes scheduling functionality as Model Context Protocol (MCP) tools for AI agents, particularly Letta agents. The system allows AI agents to schedule prompts to themselves for future delivery with support for one-time, interval, and cron-based schedules.
 
 **Key Architecture**: This project has migrated from a complex Sanctum-based server to a lightweight FastMCP-based implementation. The legacy Sanctum code is archived under `archive/sanctum/`.
 
@@ -70,8 +70,14 @@ python -m promptyoself.cli test
 # List available agents
 python -m promptyoself.cli agents
 
-# Register a schedule
-python -m promptyoself.cli register <agent_id> "prompt text" --time "2025-12-25T10:00:00"
+# Register a one-time schedule
+python -m promptyoself.cli register --agent-id <agent_id> --prompt "prompt text" --time "2025-12-25T10:00:00Z"
+
+# Register a cron schedule
+python -m promptyoself.cli register --agent-id <agent_id> --prompt "Daily check-in" --cron "0 9 * * *"
+
+# Register an interval schedule
+python -m promptyoself.cli register --agent-id <agent_id> --prompt "Focus check" --every "30m" --start-at "2025-01-02T15:00:00Z" --max-repetitions 10
 
 # List schedules
 python -m promptyoself.cli list
@@ -86,7 +92,8 @@ python -m promptyoself.cli execute --loop --interval 60
 ## Architecture Overview
 
 ### Current FastMCP Architecture (2025)
-```
+
+```text
 AI Client (Claude/Letta) → FastMCP Server → PromptYoSelf CLI Functions → SQLite DB + Letta API
 ```
 
@@ -102,48 +109,56 @@ The system consists of:
 
 The FastMCP server exposes these tools:
 
-- **promptyoself_register**: Schedule new prompts (one-time, interval, cron, daily)
-- **promptyoself_list**: List schedules with optional filtering
-- **promptyoself_cancel**: Cancel schedules by ID
-- **promptyoself_execute**: Execute due prompts (once or loop mode)
-- **promptyoself_test**: Test Letta connectivity
-- **promptyoself_agents**: List available Letta agents
-- **promptyoself_upload**: Upload Letta-native tools from source code
-- **health**: Server health and configuration status
+- promptyoself_schedule_time: One-time schedule with an ISO-8601 datetime (e.g., `2025-12-25T10:00:00Z`).
+- promptyoself_schedule_cron: Recurring schedule with a standard 5-field cron string (e.g., `0 9 * * *`).
+- promptyoself_schedule_every: Interval schedule with every/start_at/max_repetitions (e.g., `every="30m"`).
+- promptyoself_list: List schedules with optional filtering.
+- promptyoself_cancel: Cancel schedules by ID.
+- promptyoself_execute: Execute due prompts (once or loop mode).
+- promptyoself_test: Test Letta connectivity.
+- promptyoself_agents: List available Letta agents.
+- promptyoself_upload: Upload Letta-native tools from source code.
+- health: Server health and configuration status.
 
 ### Core Modules
 
 #### `promptyoself_mcp_server.py` (Main Server)
+
 - FastMCP server implementation
 - Tool registration and argument mapping
 - Transport configuration (stdio/HTTP/SSE)
 - Error handling and logging
 
 #### `promptyoself/cli.py` (Core Logic)
+
 - Schedule registration and management functions
 - Agent validation and testing
 - Daemon mode execution
 - Direct imports by MCP server (no subprocess shelling)
 
 #### `promptyoself/db.py` (Database Layer)
+
 - SQLAlchemy models and session management
 - Schedule CRUD operations with proper indexes
 - Database initialization and migration handling
 - Performance optimization for large schedule counts
 
 #### `promptyoself/scheduler.py` (Scheduling Engine)
+
 - APScheduler background processing
 - Cron expression parsing with croniter
 - Schedule calculation for multiple formats
 - Robust error handling and retry logic
 
 #### `promptyoself/letta_api.py` (Agent Integration)
+
 - Singleton Letta client pattern
 - Multiple authentication methods (API key, password, dummy)
 - Retry logic with exponential backoff
 - Agent validation and prompt delivery
 
 #### `promptyoself/logging_config.py` (Structured Logging)
+
 - JSON structured logging configuration
 - Performance timing context managers
 - Automatic log rotation and error separation
@@ -151,6 +166,7 @@ The FastMCP server exposes these tools:
 ## Environment Configuration
 
 ### Required Environment Variables
+
 ```bash
 # Letta Connection (choose one authentication method)
 LETTA_API_KEY=your-api-key                    # For cloud Letta instances
@@ -167,6 +183,7 @@ PROMPTYOSELF_LOG_FORMAT=json                  # or 'text'
 ```
 
 ### FastMCP Transport Configuration
+
 ```bash
 # Transport settings (optional)
 FASTMCP_TRANSPORT=stdio                       # Transport type
@@ -237,7 +254,7 @@ The test suite is organized into three tiers:
 ```ini
 [pytest]
 testpaths = tests
-addopts = -v --cov=promptyoself_mcp_server --cov=promptyoself --cov-fail-under=80
+addopts = -v --cov=promptyoself_mcp_server --cov=promptyoself --cov-fail-under=35
 markers =
     unit: Unit tests
     integration: Integration tests  
@@ -247,27 +264,26 @@ markers =
 
 ## Database Schema
 
-### schedules Table
-```sql
-CREATE TABLE schedules (
-    id INTEGER PRIMARY KEY,
-    agent_id TEXT NOT NULL,
-    prompt_text TEXT NOT NULL,
-    schedule_type TEXT NOT NULL,  -- 'once', 'cron', 'interval', 'daily'
-    schedule_value TEXT NOT NULL,
-    next_run DATETIME,
-    active BOOLEAN DEFAULT 1,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    last_run DATETIME,
-    max_repetitions INTEGER,
-    repetition_count INTEGER DEFAULT 0
-);
+The MCP/CLI path uses a unified table named `unified_reminders` (see `promptyoself/db.py`). A legacy `schedules` table may exist for backward compatibility but new inserts/queries go through `unified_reminders` via an adapter.
 
--- Performance indexes
-CREATE INDEX idx_schedules_due ON schedules(next_run, active);
-CREATE INDEX idx_schedules_agent_active ON schedules(agent_id, active);
-CREATE INDEX idx_schedules_created_at ON schedules(created_at);
-```
+Key columns:
+- id INTEGER PRIMARY KEY
+- message TEXT NOT NULL
+- next_run DATETIME NOT NULL
+- status TEXT DEFAULT "pending"
+- active BOOLEAN DEFAULT 1
+- created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+- updated_at DATETIME
+- last_run DATETIME
+- schedule_type TEXT — 'once', 'cron', or 'interval'
+- schedule_value TEXT — cron expression or interval string (e.g., "30s", "5m", "1h")
+- max_repetitions INTEGER
+- repetition_count INTEGER DEFAULT 0
+- agent_id TEXT — present for CLI-originated reminders
+- process_name TEXT
+- task_id INTEGER, user_id INTEGER — reserved for a web UI path
+
+Performance indexes include due-time and agent/activity composites (see Index(...) declarations in `db.py`).
 
 ## Common Development Tasks
 
@@ -359,7 +375,7 @@ sqlite3 promptyoself.db "SELECT COUNT(*) FROM schedules WHERE active = 1;"
 ### Documentation
 - `README.md` - Primary documentation (accurate)
 - `README_FASTMCP.md` - Technical implementation details (accurate)
-- `promptyoself/CLAUDE.md` - Legacy plugin docs (outdated, references Sanctum)
+- `AGENTS.md` - Plugin developer guide (current, moved to repo root)
 
 ### Testing
 - `tests/unit/` - Unit tests with mocking

@@ -64,7 +64,7 @@ class TestMCPWorkflowHTTP:
     async def test_full_workflow(self, http_client: "Client"):
         # 1. Register a prompt
         register_result = await http_client.call_tool(
-            "promptyoself_register",
+            "promptyoself_schedule_time",
             {
                 "agent_id": "e2e-test-agent",
                 "prompt": "e2e test prompt",

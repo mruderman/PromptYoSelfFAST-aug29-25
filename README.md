@@ -80,7 +80,7 @@ pytest
 
 Environment file:
 
-- Copy `.env.example` to `.env` and set values for local/dev as needed.
+- Copy `example.env` to `.env` and set values for local/dev as needed.
 
 ## 🔐 Configuration
 
@@ -93,8 +93,10 @@ The server requires configuration for connecting to your Letta instance. **Never
 1. Copy the example configuration file:
 
 ```bash
-cp .env.example .env
+cp example.env .env
 ```
+
+Note: The MCP HTTP transport is not a plain REST API; use an MCP client (e.g., FastMCP Client). A direct browser GET to `/mcp/*` will 404.
 
 1. Edit `.env` and set your actual values:
 

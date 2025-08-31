@@ -13,61 +13,6 @@ Environment:
 - LETTA_API_KEY or LETTA_SERVER_PASSWORD (for Letta auth and upload)
 - PROMPTYOSELF_DB (default promptyoself.db)
 
-Status conventions:
-- Success returns a dict with "status": "success" (and additional fields)
-- Errors return a dict with "error": "message"
-
----
-
-## Tool: promptyoself_register
-
-Register a new scheduled prompt for a Letta agent.
-
-Arguments:
-- agent_id (str, required) — Target Letta agent ID
-- prompt (str, required) — Prompt content
-- time (str, optional) — ISO datetime for one-time schedule (e.g., 2025-12-25T10:00:00)
-- cron (str, optional) — Cron expression for recurring schedule (e.g., "0 9 * * *")
-- every (str, optional) — Interval expression for recurring schedules, supported formats:
-  - "30s" (seconds), "5m" (minutes), "1h" (hours), or integer seconds (e.g., "45")
-- skip_validation (bool, optional, default False) — Skip agent existence validation
-- max_repetitions (int, optional) — Max repeat count for interval schedules (must be positive)
-- start_at (str, optional) — ISO datetime for when interval schedules should begin (must be in the future)
-
-Validation rules:
-- Exactly one of time, cron, every must be provided
-- time and start_at must be in the future
-- cron must be a valid cron expression
-- every must parse as seconds (via suffix or integer)
-- max_repetitions must be positive if provided
-
-Success response:
-{
-  "status": "success",
-  "id": <int>,
-  "next_run": "<ISO timestamp>",
-  "message": "Prompt scheduled with ID <id>"
-}
-
-Error responses:
-- {"error": "Missing required arguments: agent-id and prompt"}
-- {"error": "Must specify one of --time, --cron, or --every"}
-- {"error": "Cannot specify multiple scheduling options"}
-- {"error": "Agent validation failed: <message>"} (unless skip_validation)
-- {"error": "Scheduled time must be in the future"}
-- {"error": "Invalid cron expression: <expr>"}
-- {"error": "Invalid interval format: <every>. Use formats like '30s', '5m', '1h'"}
-- {"error": "max-repetitions must be a positive integer"}
-- {"error": "Failed to register prompt: <exception>"}
-
-Example:
-{
-  "status": "success",
-  "id": 42,
-  "next_run": "2025-01-01T14:30:00+00:00",
-  "message": "Prompt scheduled with ID 42"
-}
-
 ---
 
 ## Tool: promptyoself_list
@@ -104,6 +49,144 @@ Error response:
 
 ---
 
+## Tool: promptyoself_schedule_time
+
+Schedule a one-time prompt at an exact datetime.
+
+Inputs
+- agent_id (str, optional)
+- prompt (str, required)
+- time (str, required) — ISO 8601 datetime in the future. Accepted forms:
+  - 2025-08-31T09:50:22Z (UTC)
+  - 2025-08-31T09:50:22+00:00 (offset)
+  - 2025-08-31 09:50:22 UTC (normalized to Z)
+- skip_validation (bool, optional, default False)
+
+Example
+{
+  "agent_id": "agt_abc123",
+  "prompt": "Ping me once",
+  "time": "2025-12-25T10:00:00Z"
+}
+
+---
+
+## Tool: promptyoself_schedule_cron
+
+Schedule a recurring prompt using a cron expression.
+
+Inputs
+- agent_id (str, optional)
+- prompt (str, required)
+- cron (str, required) — Standard 5-field cron (m h dom mon dow). Examples:
+  - "0 9 * * *" (every day at 09:00)
+  - "*/15 * * * *" (every 15 minutes)
+  - "0 9 * * MON-FRI" (weekdays at 09:00) if your cron parser supports names
+- skip_validation (bool, optional, default False)
+
+Example
+{
+  "agent_id": "agt_abc123",
+  "prompt": "Daily standup",
+  "cron": "0 9 * * *"
+}
+
+---
+
+## Tool: promptyoself_schedule_every
+
+Schedule a repeating prompt using an interval.
+
+Inputs
+- agent_id (str, optional)
+- prompt (str, required)
+- every (str, required) — Interval like "30s", "5m", or "1h" (integer seconds allowed, e.g., "45")
+- start_at (str, optional) — ISO datetime in the future when the interval should begin
+- max_repetitions (int, optional) — Positive cap on repeats
+- skip_validation (bool, optional, default False)
+
+Example
+{
+  "agent_id": "agt_abc123",
+  "prompt": "Focus check",
+  "every": "30m",
+  "start_at": "2025-01-02T15:00:00Z",
+  "max_repetitions": 10
+}
+
+---
+
+## Agent ID Inference & Diagnostics
+
+PromptYoSelf needs a valid Letta `agent_id` to deliver prompts. You can provide it explicitly, or let the server infer it in this order:
+- context metadata (if your MCP client forwards it),
+- environment variables set on the server process,
+- single-agent fallback (if enabled and exactly one agent exists).
+
+Supported context metadata keys:
+- `metadata.agent_id`, `metadata.agentId`, `metadata.letta_agent_id`, `metadata.caller_agent_id`
+- Nested: `metadata.agent.id`, `metadata.agent.agent_id`, `metadata.agent.agentId`
+- Direct attribute: `ctx.agent_id`
+
+Environment variables (set on the MCP server process):
+- `PROMPTYOSELF_DEFAULT_AGENT_ID`
+- `LETTA_AGENT_ID`
+- `LETTA_DEFAULT_AGENT_ID`
+- Optional fallback: `PROMPTYOSELF_USE_SINGLE_AGENT_FALLBACK=true`
+
+Quick env examples:
+- Bash (shell):
+  - `export PROMPTYOSELF_DEFAULT_AGENT_ID=agent-1a4a5989-ab98-478f-9b1f-bbece814ed7a`
+  - `export PROMPTYOSELF_USE_SINGLE_AGENT_FALLBACK=true`
+- systemd service:
+  - In your unit file under `[Service]`:
+    - `Environment=PROMPTYOSELF_DEFAULT_AGENT_ID=agent-1a4a5989-ab98-478f-9b1f-bbece814ed7a`
+    - `Environment=PROMPTYOSELF_USE_SINGLE_AGENT_FALLBACK=true`
+- Docker Compose:
+  -
+    - `environment:`
+    - `  - PROMPTYOSELF_DEFAULT_AGENT_ID=agent-1a4a5989-ab98-478f-9b1f-bbece814ed7a`
+    - `  - PROMPTYOSELF_USE_SINGLE_AGENT_FALLBACK=true`
+- Kubernetes Deployment:
+  - Under `spec.template.spec.containers.env`:
+    - `- name: PROMPTYOSELF_DEFAULT_AGENT_ID`
+    - `  value: agent-1a4a5989-ab98-478f-9b1f-bbece814ed7a`
+    - `- name: PROMPTYOSELF_USE_SINGLE_AGENT_FALLBACK`
+    - `  value: "true"`
+- GitHub Actions:
+  - `env:`
+    - `PROMPTYOSELF_DEFAULT_AGENT_ID: agent-1a4a5989-ab98-478f-9b1f-bbece814ed7a`
+
+Diagnostics tool:
+- Use `promptyoself_inference_diagnostics` to see what the server can infer for the current request. It returns:
+  - `inferred_agent_id` and `inference_debug` with `source`, context keys seen, env presence, and fallback flags.
+
+Example result (abbreviated):
+```
+{
+  "status": "ok",
+  "ctx_present": true,
+  "ctx_metadata_keys": ["agent_id"],
+  "env": {"PROMPTYOSELF_DEFAULT_AGENT_ID": false, "LETTA_AGENT_ID": true, "LETTA_DEFAULT_AGENT_ID": false},
+  "single_agent_fallback_enabled": false,
+  "inferred_agent_id": "agent-1a4a5989-ab98-478f-9b1f-bbece814ed7a",
+  "inference_debug": {"source": "env", "key": "LETTA_AGENT_ID"}
+}
+```
+
+Recipe: two minutes from now
+- Use interval once:
+```
+{
+  "prompt": "Ping me in two minutes",
+  "every": "2m",
+  "max_repetitions": 1
+}
+```
+Note: still requires a resolvable `agent_id` via explicit arg, ctx, or env.
+
+---
+
 ## Tool: promptyoself_cancel
 
 Cancel a scheduled prompt by ID.
@@ -125,6 +208,18 @@ Error responses:
 
 ---
 
+## Agent ID Inference
+
+When `agent_id` is not provided, the server tries to infer it in this order:
+
+- Context metadata: If the MCP client provides `ctx.metadata` with `agent_id`/`agentId`/`letta_agent_id`/`caller_agent_id`, or a direct `ctx.agent_id` attribute.
+- Environment defaults: `PROMPTYOSELF_DEFAULT_AGENT_ID`, `LETTA_AGENT_ID`, or `LETTA_DEFAULT_AGENT_ID`.
+- Single‑agent fallback: If `PROMPTYOSELF_USE_SINGLE_AGENT_FALLBACK=true` and the Letta server lists exactly one agent, it will be used.
+
+If none of these yield an agent ID, the request fails with `{ "error": "agent_id is required and could not be inferred" }`. In multi‑agent setups, prefer explicit `agent_id`.
+
+---
+
 ## Tool: promptyoself_execute
 
 Execute due prompts once, or run in loop mode.
@@ -138,11 +233,13 @@ Once-mode success response:
   "status": "success",
   "executed": [
     {
-      "schedule_id": 42,
+      "id": 42,
       "agent_id": "agent-123",
-      "prompt_text": "Daily report",
-      "sent": true,
-      "error": null
+      "delivered": true,
+      "next_run": null,
+      "repetition_count": 1,
+      "max_repetitions": null,
+      "completed": false
     }
   ],
   "message": "1 prompts executed"
@@ -171,7 +268,7 @@ Arguments:
 - (none)
 
 Success response:
-- Shape delegated to smcp.plugins.promptyoself.letta_api.test_letta_connection(), typically:
+- Shape delegated to promptyoself.letta_api.test_letta_connection(), typically:
 {
   "status": "success",
   "message": "Connected",
@@ -262,7 +359,7 @@ Register (interval with start):
   "prompt": "Focus check",
   "every": "5m",
   "max_repetitions": 10,
-  "start_at": "2025-01-02T15:00:00"
+  "start_at": "2025-01-02T15:00:00Z"
 }
 
 List:

@@ -19,6 +19,15 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 # Import the new FastMCP server instance
+# Ensure 'letta_client' is stubbed if not installed to avoid import errors
+try:
+    import letta_client  # type: ignore
+except Exception:
+    import types
+    import sys as _sys
+    _fake = types.SimpleNamespace(Letta=object, MessageCreate=object, TextContent=object)
+    _sys.modules['letta_client'] = _fake
+
 import promptyoself_mcp_server as srv
 
 

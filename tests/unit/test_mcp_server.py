@@ -8,10 +8,10 @@ async def test_health_tool(mcp_in_memory_client):
 
 @pytest.mark.asyncio
 @patch("promptyoself_mcp_server._register_prompt", return_value={"status": "success", "id": 123})
-async def test_register_tool(mock_register, mcp_in_memory_client):
+async def test_register_time_tool(mock_register, mcp_in_memory_client):
     result = await mcp_in_memory_client.call_tool(
-        "promptyoself_register",
-        {"agent_id": "test-agent", "prompt": "test prompt", "time": "2025-01-01T00:00:00"}
+        "promptyoself_schedule_time",
+        {"agent_id": "test-agent", "prompt": "test prompt", "time": "2025-01-01T00:00:00Z"}
     )
     assert result.data["status"] == "success"
     assert result.data["id"] == 123

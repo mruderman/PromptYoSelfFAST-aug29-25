@@ -66,7 +66,7 @@ except ImportError:
 
 
 def register_prompt(args: Dict[str, Any]) -> Dict[str, Any]:
-    """Register a new scheduled prompt."""
+    """Register a new scheduled prompt for yourself. Exactly one of time, cron, or every must be provided. Make sure to include you own own agent ID."""
     start_time = time.time()
     
     agent_id = args.get("agent_id") or args.get("agent-id")
@@ -137,10 +137,32 @@ def register_prompt(args: Dict[str, Any]) -> Dict[str, Any]:
             })
             return {"error": error_msg}
     
+    def _normalize_iso(value: str) -> str:
+        """Normalize common datetime strings to ISO 8601.
+        - Preserve exact ISO (including trailing 'Z').
+        - Convert 'YYYY-MM-DD HH:MM:SS UTC' to 'YYYY-MM-DDTHH:MM:SSZ'.
+        - Trim whitespace.
+        """
+        v = value.strip()
+        if v.endswith('Z'):
+            return v
+        if v.upper().endswith(' UTC'):
+            core = v[:-4].strip()
+            if 'T' not in core and ' ' in core:
+                date_part, time_part = core.split(' ', 1)
+                core = f"{date_part}T{time_part}"
+            return f"{core}Z"
+        return v
+
     try:
         if time_str:
             # One-time schedule
-            next_run = date_parser.parse(time_str)
+            try:
+                # Prefer strict ISO parsing; fall back to flexible parse
+                norm = _normalize_iso(time_str)
+                next_run = date_parser.isoparse(norm)
+            except Exception:
+                next_run = date_parser.parse(time_str)
             # Compare using a matching reference clock: local for naive, same tz for aware
             now_ref = datetime.now(tz=next_run.tzinfo) if next_run.tzinfo else datetime.now()
             if next_run <= now_ref:
@@ -176,7 +198,11 @@ def register_prompt(args: Dict[str, Any]) -> Dict[str, Any]:
                 
                 # Handle start_at parameter for interval schedules
                 if start_at:
-                    next_run = date_parser.parse(start_at)
+                    try:
+                        norm_start = _normalize_iso(start_at)
+                        next_run = date_parser.isoparse(norm_start)
+                    except Exception:
+                        next_run = date_parser.parse(start_at)
                     # Use matching reference clock for validity check
                     start_ref = datetime.now(tz=next_run.tzinfo) if next_run.tzinfo else datetime.now()
                     if next_run <= start_ref:
@@ -185,6 +211,13 @@ def register_prompt(args: Dict[str, Any]) -> Dict[str, Any]:
                     next_run = datetime.utcnow() + timedelta(seconds=seconds)
             except ValueError:
                 return {"error": f"Invalid interval format: {every_str}. Use formats like '30s', '5m', '1h'"}
+        
+        # Validate parsed time_str explicitly to improve error clarity
+        if time_str:
+            try:
+                _ = next_run  # ensure set
+            except NameError:
+                return {"error": "Invalid time format. Use ISO 8601 like 2025-12-25T10:00:00Z or include offset, e.g. 2025-12-25T10:00:00-05:00"}
         
         # Validate max_repetitions if provided
         if max_repetitions is not None:
@@ -633,32 +666,12 @@ Examples:
     sys.exit(0 if success else 1)
 
 
-# =============================================================================
-# MCP Tool Wrapper Functions
-# These functions have names that match the MCP tool names exactly,
-# enabling Letta to find them when deriving schemas from source code.
-# =============================================================================
 
-def promptyoself_register(agent_id: str, prompt: str, time: str = None, 
-                         cron: str = None, every: str = None, 
-                         skip_validation: bool = False, max_repetitions: int = None,
-                         start_at: str = None) -> str:
-    """
-    Register a new scheduled prompt for a Letta agent.
-
-    Args:
-        agent_id (str): The ID of the target Letta agent to receive the prompt.
-        prompt (str): The text content of the prompt to schedule.
-        time (str, optional): ISO timestamp for one-time scheduling (e.g., "2024-12-25T10:00:00"). Defaults to None.
-        cron (str, optional): Cron expression for recurring schedules (e.g., "0 9 * * MON-FRI"). Defaults to None.
-        every (str, optional): Interval expression for recurring schedules (e.g., "30 minutes", "2 hours"). Defaults to None.
-        skip_validation (bool, optional): Skip agent validation for faster scheduling. Defaults to False.
-        max_repetitions (int, optional): Maximum number of times to repeat the schedule. Defaults to None.
-        start_at (str, optional): ISO timestamp for when recurring schedules should start. Defaults to None.
-
-    Returns:
-        str: JSON response containing the status and schedule details.
-    """
+def promptyoself_schedule(agent_id: str, prompt: str, time: str = None,
+                          cron: str = None, every: str = None,
+                          skip_validation: bool = False, max_repetitions: int = None,
+                          start_at: str = None) -> str:
+    """Register a new scheduled prompt for yourself. Exactly one of time, cron, or every must be provided. Make sure to include you own own agent ID."""
     args = {
         "agent_id": agent_id,
         "prompt": prompt,
@@ -667,7 +680,7 @@ def promptyoself_register(agent_id: str, prompt: str, time: str = None,
         "every": every,
         "skip_validation": skip_validation,
         "max_repetitions": max_repetitions,
-        "start_at": start_at
+        "start_at": start_at,
     }
     result = register_prompt(args)
     return json.dumps(result, indent=2)

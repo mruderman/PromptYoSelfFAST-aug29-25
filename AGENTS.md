@@ -26,8 +26,8 @@ The plugin is composed of several key Python modules:
 
 2. `db.py` (Database Layer):
    - Uses SQLAlchemy to manage a SQLite database.
-   - Main Table: `unified_reminders` (primary table for all new schedules).
-   - Legacy Table: `schedules` (`PromptSchedule` model), kept for backward compatibility.
+   - Primary Table: `unified_reminders` (used by MCP/CLI path).
+   - Legacy Table: `schedules` (kept for backward compatibility; not used by new inserts).
    - Adapter: `CLIReminderAdapter` maps data between the `unified_reminders` table and the CLI-facing format.
 
 3. `scheduler.py` (Scheduling Engine):
@@ -47,7 +47,7 @@ The plugin is composed of several key Python modules:
 
 ## Database Schema
 
-Primary table: `unified_reminders`. The old `schedules` table is deprecated.
+Primary table: `unified_reminders`. The legacy `schedules` table remains for compatibility but is not used by new code paths.
 
 | Column | Type | Description |
 | :--- | :--- | :--- |
@@ -66,13 +66,13 @@ Primary table: `unified_reminders`. The old `schedules` table is deprecated.
 
 ```bash
 # Register a one-time prompt
-python -m promptyoself.cli register --agent-id <agent_id> --prompt "My prompt" --time "2025-01-01T10:00:00"
+python -m promptyoself.cli register --agent-id <agent_id> --prompt "My prompt" --time "2025-01-01T10:00:00Z"
 
 # Register a recurring prompt with a cron string
 python -m promptyoself.cli register --agent-id <agent_id> --prompt "Daily check-in" --cron "0 9 * * *"
 
 # Register an interval-based prompt that runs every 15 minutes
-python -m promptyoself.cli register --agent-id <agent_id> --prompt "Ping" --every "15m"
+python -m promptyoself.cli register --agent-id <agent_id> --prompt "Ping" --every "15m" --start-at "2025-01-02T15:00:00Z" --max-repetitions 10
 
 # List all active schedules
 python -m promptyoself.cli list
@@ -108,6 +108,14 @@ Run the full test suite from repo root:
 pytest
 ```
 
-Note: Coverage enforcement is temporarily set to 35% while additional tests land; the goal is to step back up toward 80%.
+Note: Coverage enforcement is temporarily set to 35% (see `pytest.ini`) while additional tests land; the goal is to step back up toward 80%.
 
 MCP HTTP is not a REST API; use an MCP client (e.g., FastMCP Client) to call tools like `health`.
+
+## MCP Tools (Strict only)
+
+The server exposes strict variants to help ADE and other clients validate inputs and avoid ambiguous arguments:
+
+- `promptyoself_schedule_time` – one-time schedule with an ISO-8601 `time` string.
+- `promptyoself_schedule_cron` – recurring schedule with a 5-field `cron` expression.
+- `promptyoself_schedule_every` – interval schedule with `every` (e.g., `30m`), optional `start_at`, and optional `max_repetitions`.
