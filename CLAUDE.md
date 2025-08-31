@@ -109,9 +109,10 @@ The system consists of:
 
 The FastMCP server exposes these tools:
 
-- promptyoself_schedule_time: One-time schedule with an ISO-8601 datetime (e.g., `2025-12-25T10:00:00Z`).
-- promptyoself_schedule_cron: Recurring schedule with a standard 5-field cron string (e.g., `0 9 * * *`).
-- promptyoself_schedule_every: Interval schedule with every/start_at/max_repetitions (e.g., `every="30m"`).
+- promptyoself_schedule: General scheduler (provide exactly one of time, cron, or every).
+- promptyoself_schedule_time: Strict one-time variant with an ISO-8601 datetime (e.g., `2025-12-25T10:00:00Z`).
+- promptyoself_schedule_cron: Strict recurring variant with a standard 5-field cron string (e.g., `0 9 * * *`).
+- promptyoself_schedule_every: Strict interval variant with every/start_at/max_repetitions (e.g., `every="30m"`).
 - promptyoself_list: List schedules with optional filtering.
 - promptyoself_cancel: Cancel schedules by ID.
 - promptyoself_execute: Execute due prompts (once or loop mode).
@@ -170,8 +171,8 @@ The FastMCP server exposes these tools:
 ```bash
 # Letta Connection (choose one authentication method)
 LETTA_API_KEY=your-api-key                    # For cloud Letta instances
-LETTA_SERVER_PASSWORD=your-password           # For self-hosted Letta
-LETTA_BASE_URL=http://localhost:8283          # Letta server URL
+LETTA_SERVER_PASSWORD=TWIJftq/ufbbxo8w51m/BQ1wBNrZb/JTlmnopxyz           # For self-hosted Letta
+LETTA_BASE_URL=https://cyansociety.a.pinggy.link/ #Letta server URL
 
 # Database Configuration
 PROMPTYOSELF_DB=/path/to/promptyoself.db     # SQLite database file
