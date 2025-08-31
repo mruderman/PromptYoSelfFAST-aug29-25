@@ -15,8 +15,8 @@ async def test_schedule_time_with_env_inference(mock_register, mcp_in_memory_cli
         "agent_id": None,
     }
     result = await mcp_in_memory_client.call_tool("promptyoself_schedule_time", payload)
-    assert result.data["status"] == "success"
-    assert result.data["id"] == 201
+    assert result.structured_content["status"] == "success"
+    assert result.structured_content["id"] == 201
     mock_register.assert_called_once()
 
 
@@ -30,8 +30,8 @@ async def test_schedule_cron_with_env_inference(mock_register, mcp_in_memory_cli
         "agent_id": None,
     }
     result = await mcp_in_memory_client.call_tool("promptyoself_schedule_cron", payload)
-    assert result.data["status"] == "success"
-    assert result.data["id"] == 202
+    assert result.structured_content["status"] == "success"
+    assert result.structured_content["id"] == 202
     mock_register.assert_called_once()
 
 
@@ -45,6 +45,6 @@ async def test_schedule_every_with_env_inference(mock_register, mcp_in_memory_cl
         "agent_id": None,
     }
     result = await mcp_in_memory_client.call_tool("promptyoself_schedule_every", payload)
-    assert result.data["status"] == "success"
-    assert result.data["id"] == 203
+    assert result.structured_content["status"] == "success"
+    assert result.structured_content["id"] == 203
     mock_register.assert_called_once()

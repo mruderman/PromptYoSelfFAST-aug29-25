@@ -20,7 +20,7 @@ async def test_schedule_time_missing_agent_inference_fails(mock_register, mcp_in
         "agent_id": None,
     }
     result = await mcp_in_memory_client.call_tool("promptyoself_schedule_time", payload)
-    assert "error" in result.data
+    assert "error" in result.structured_content
     # Should not reach register when inference fails
     mock_register.assert_not_called()
 
@@ -42,8 +42,8 @@ async def test_schedule_time_in_past_returns_error(mcp_in_memory_client, monkeyp
         "agent_id": None,
     }
     result = await mcp_in_memory_client.call_tool("promptyoself_schedule_time", payload)
-    assert "error" in result.data
-    assert "future" in result.data["error"].lower()
+    assert "error" in result.structured_content
+    assert "future" in result.structured_content["error"].lower()
 
 
 @pytest.mark.asyncio
@@ -62,8 +62,8 @@ async def test_schedule_cron_invalid_expression(mcp_in_memory_client, monkeypatc
         "agent_id": None,
     }
     result = await mcp_in_memory_client.call_tool("promptyoself_schedule_cron", payload)
-    assert "error" in result.data
-    assert "invalid cron" in result.data["error"].lower()
+    assert "error" in result.structured_content
+    assert "invalid cron" in result.structured_content["error"].lower()
 
 
 @pytest.mark.asyncio
@@ -81,13 +81,14 @@ async def test_schedule_every_invalid_interval(mcp_in_memory_client, monkeypatch
         "every": "5x",  # invalid suffix
     }
     result = await mcp_in_memory_client.call_tool("promptyoself_schedule_every", payload)
-    assert "error" in result.data
-    assert "invalid interval" in result.data["error"].lower()
+    assert "error" in result.structured_content
+    assert "invalid interval" in result.structured_content["error"].lower()
 
 
 @pytest.mark.asyncio
 async def test_schedule_every_invalid_max_repetitions(mcp_in_memory_client, monkeypatch):
     import promptyoself.cli as cli
+    from fastmcp.exceptions import ToolError
 
     def _ok_validate(agent_id: str):
         return {"status": "success", "exists": True, "agent_id": agent_id}
@@ -100,7 +101,11 @@ async def test_schedule_every_invalid_max_repetitions(mcp_in_memory_client, monk
         "every": "1m",
         "max_repetitions": "abc",  # invalid type
     }
-    result = await mcp_in_memory_client.call_tool("promptyoself_schedule_every", payload)
-    assert "error" in result.data
-    assert "max-repetitions" in result.data["error"].lower()
+    
+    # FastMCP will validate the schema and raise ToolError for invalid input types
+    with pytest.raises(ToolError) as exc_info:
+        await mcp_in_memory_client.call_tool("promptyoself_schedule_every", payload)
+    
+    # Verify it's a validation error
+    assert "Input validation error" in str(exc_info.value)
 

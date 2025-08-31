@@ -33,9 +33,9 @@ async def test_e2e_schedule_time_through_cli(monkeypatch, mcp_in_memory_client):
         "agent_id": None,
     }
     result = await mcp_in_memory_client.call_tool("promptyoself_schedule_time", payload)
-    assert result.data["status"] == "success"
-    assert result.data["id"] == 301
-    assert "next_run" in result.data
+    assert result.structured_content["status"] == "success"
+    assert result.structured_content["id"] == 301
+    assert "next_run" in result.structured_content
 
 
 @pytest.mark.asyncio
@@ -62,9 +62,9 @@ async def test_e2e_schedule_cron_through_cli(monkeypatch, mcp_in_memory_client):
         "agent_id": None,
     }
     result = await mcp_in_memory_client.call_tool("promptyoself_schedule_cron", payload)
-    assert result.data["status"] == "success"
-    assert result.data["id"] == 302
-    assert "next_run" in result.data
+    assert result.structured_content["status"] == "success"
+    assert result.structured_content["id"] == 302
+    assert "next_run" in result.structured_content
 
 
 @pytest.mark.asyncio
@@ -92,6 +92,6 @@ async def test_e2e_schedule_every_through_cli(monkeypatch, mcp_in_memory_client)
         "max_repetitions": 1,
     }
     result = await mcp_in_memory_client.call_tool("promptyoself_schedule_every", payload)
-    assert result.data["status"] == "success"
-    assert result.data["id"] == 303
-    assert "next_run" in result.data
+    assert result.structured_content["status"] == "success"
+    assert result.structured_content["id"] == 303
+    assert "next_run" in result.structured_content

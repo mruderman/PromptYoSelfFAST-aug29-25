@@ -152,3 +152,34 @@ def test_get_database_stats(session: Session):
     assert stats["active_reminders"] == 1
     assert stats["cli_reminders"] == 1
     assert "database_size_bytes" in stats
+
+# Additional simple tests to improve coverage
+def test_cancel_schedule_nonexistent(session: Session):
+    """Test canceling a schedule that doesn't exist."""
+    result = db.cancel_schedule(99999)
+    assert result is False
+
+def test_get_schedule_nonexistent(session: Session):
+    """Test getting a schedule that doesn't exist.""" 
+    result = db.get_schedule(99999)
+    assert result is None
+
+def test_update_schedule_nonexistent(session: Session):
+    """Test updating a schedule that doesn't exist."""
+    result = db.update_schedule(99999, prompt_text="New text")
+    assert result is False
+
+def test_list_schedules_empty(session: Session):
+    """Test listing schedules when database is empty."""
+    schedules = db.list_schedules()
+    assert schedules == []
+
+def test_get_due_schedules_empty(session: Session):
+    """Test getting due schedules when none are due."""
+    schedules = db.get_due_schedules()
+    assert schedules == []
+
+def test_cleanup_old_schedules_empty(session: Session):
+    """Test cleanup when no old schedules exist."""
+    deleted_count = db.cleanup_old_schedules(days_old=30)
+    assert deleted_count == 0
