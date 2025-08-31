@@ -255,7 +255,8 @@ async def promptyoself_register(
                 hint = (
                     "Provide agent_id explicitly, or set one of "
                     "PROMPTYOSELF_DEFAULT_AGENT_ID/LETTA_AGENT_ID/LETTA_DEFAULT_AGENT_ID. "
-                    "If calling via Letta MCP, ensure ctx.metadata.agent_id is passed."
+                    "If calling via Letta MCP, ensure ctx.metadata.agent_id is passed. "
+                    "Check CLIENT_DEBUGGING.md for MCP client troubleshooting steps."
                 )
                 return {"error": (
                     "agent_id is required and could not be inferred "
@@ -320,9 +321,30 @@ async def _promptyoself_schedule_time_tool(
             "time": "2025-12-25T10:00:00Z"
         }
         """
+        # Enhanced debugging for agent_id parameter handling
+        logger.debug("promptyoself_schedule_time called", extra={
+            "agent_id_raw": repr(agent_id),
+            "agent_id_type": type(agent_id).__name__,
+            "agent_id_truthy": bool(agent_id),
+            "prompt_length": len(prompt) if prompt else 0,
+            "time": time,
+            "skip_validation": skip_validation
+        })
+        
+        # Normalize agent_id handling - treat string "None" as None
+        if agent_id is not None and str(agent_id).strip().lower() in ("none", "null", ""):
+            logger.warning("Converting string 'None'/'null'/empty to actual None", extra={
+                "original_agent_id": repr(agent_id)
+            })
+            agent_id = None
+        
         # Infer if needed
         if not agent_id or not str(agent_id).strip():
-            inferred, _debug = _infer_agent_id(ctx)
+            inferred, debug_info = _infer_agent_id(ctx)
+            logger.info("Agent ID inference attempted", extra={
+                "inferred_agent_id": inferred,
+                "inference_debug": debug_info
+            })
             agent_id = inferred
 
         return await promptyoself_register(
@@ -362,6 +384,10 @@ async def _promptyoself_schedule_cron_tool(
             "cron": "0 9 * * *"
         }
         """
+        # Normalize agent_id handling - treat string "None" as None
+        if agent_id is not None and str(agent_id).strip().lower() in ("none", "null", ""):
+            agent_id = None
+        
         # Infer if needed
         if not agent_id or not str(agent_id).strip():
             inferred, _debug = _infer_agent_id(ctx)
@@ -407,6 +433,10 @@ async def _promptyoself_schedule_every_tool(
             "max_repetitions": 10
         }
         """
+        # Normalize agent_id handling - treat string "None" as None
+        if agent_id is not None and str(agent_id).strip().lower() in ("none", "null", ""):
+            agent_id = None
+        
         # Infer if needed
         if not agent_id or not str(agent_id).strip():
             inferred, _debug = _infer_agent_id(ctx)
@@ -588,6 +618,42 @@ async def _promptyoself_upload_tool(
         name=name,
         description=description,
     )
+
+
+@mcp.tool(name="promptyoself_set_default_agent")
+async def _promptyoself_set_default_agent_tool(
+    agent_id: str,
+    ctx: Context | None = None,
+) -> Dict[str, Any]:
+    """Set the default agent ID to avoid having to pass it with every call.
+    
+    This sets the LETTA_AGENT_ID environment variable for the current session.
+    
+    Args:
+        agent_id: The agent ID to set as default
+    
+    Returns:
+        JSON dict with status and confirmation
+    """
+    try:
+        if not agent_id or not agent_id.strip():
+            return {"error": "agent_id cannot be empty"}
+        
+        # Set the environment variable
+        os.environ["LETTA_AGENT_ID"] = agent_id.strip()
+        
+        # Verify it was set correctly
+        verification = os.getenv("LETTA_AGENT_ID")
+        
+        return {
+            "status": "success",
+            "message": f"Default agent ID set to: {verification}",
+            "agent_id": verification,
+            "note": "This setting only applies to the current server session"
+        }
+    except Exception as e:
+        logger.exception("Failed to set default agent ID")
+        return {"error": f"Failed to set default agent ID: {e}"}
 
 
 @mcp.tool(name="promptyoself_inference_diagnostics")
