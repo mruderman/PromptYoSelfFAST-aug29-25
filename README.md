@@ -35,6 +35,65 @@ This repository contains the PromptYoSelf plugin and a [FastMCP](https://gofastm
         python promptyoself_mcp_server.py --transport http --host 127.0.0.1 --port 8000 --path /mcp
         ```
 
+## 🔐 Configuration
+
+### Environment Variables
+
+The server requires configuration for connecting to your Letta instance. **Never commit real secrets to version control!**
+
+### Local Development Setup
+
+1. Copy the example configuration file:
+   ```bash
+   cp .env.example .env
+   ```
+
+2. Edit `.env` and set your actual values:
+   ```bash
+   # For macOS/Linux:
+   export LETTA_SERVER_PASSWORD="your_actual_password_here"
+   
+   # For Windows PowerShell:
+   $env:LETTA_SERVER_PASSWORD="your_actual_password_here"
+   ```
+
+### Docker Compose Configuration
+
+When using Docker Compose, pass environment variables from your host:
+
+```yaml
+services:
+  promptyoself:
+    build: .
+    environment:
+      - LETTA_SERVER_PASSWORD=${LETTA_SERVER_PASSWORD}
+      - LETTA_BASE_URL=http://letta:8283
+```
+
+### GitHub Actions Configuration
+
+Set secrets in your repository settings and reference them in workflows:
+
+```yaml
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run deployment
+        env:
+          LETTA_SERVER_PASSWORD: ${{ secrets.LETTA_SERVER_PASSWORD }}
+        run: |
+          python promptyoself_mcp_server.py
+```
+
+**Important**: GitHub does not expose secrets to `pull_request` workflows triggered from forks by default. Consider using `pull_request_target` with caution or require maintainer approval via environments for security.
+
+### Security Recommendations
+
+- **Rotate the leaked secret**: The LETTA_SERVER_PASSWORD that was previously committed should be rotated in your Letta server configuration
+- **Use environment variables**: Never hardcode secrets in configuration files
+- **Use a secrets manager**: For production deployments, consider using a dedicated secrets management service
+
 ## 🧪 Testing
 
 This project uses `pytest` for testing. The test configuration is defined in `pytest.ini`.
