@@ -69,6 +69,49 @@ def test_register_prompt_interval(mock_dependencies):
     assert call_kwargs['schedule_type'] == 'interval'
 
 @pytest.mark.unit
+def test_register_prompt_interval_start_at_naive_future(mock_dependencies):
+    """Interval with naive start-at is accepted and passed through as naive datetime."""
+    start_at = (datetime.datetime.now() + datetime.timedelta(minutes=30)).isoformat()
+    args = [
+        "register", "--agent-id", "test-agent", "--prompt", "Hello",
+        "--every", "15m", "--start-at", start_at
+    ]
+    run_main_with_args(args)
+    mock_dependencies["add_schedule"].assert_called_once()
+    call_kwargs = mock_dependencies["add_schedule"].call_args[1]
+    assert call_kwargs['schedule_type'] == 'interval'
+    assert isinstance(call_kwargs['next_run'], datetime.datetime)
+    assert call_kwargs['next_run'].tzinfo is None  # naive
+    assert call_kwargs['next_run'] > datetime.datetime.now()
+
+@pytest.mark.unit
+def test_register_prompt_interval_start_at_timezone_aware_future(mock_dependencies):
+    """Interval with tz-aware start-at is accepted and retains tzinfo."""
+    start_at_aware = (datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(minutes=30)).isoformat()
+    args = [
+        "register", "--agent-id", "test-agent", "--prompt", "Hello",
+        "--every", "15m", "--start-at", start_at_aware
+    ]
+    run_main_with_args(args)
+    mock_dependencies["add_schedule"].assert_called_once()
+    call_kwargs = mock_dependencies["add_schedule"].call_args[1]
+    assert call_kwargs['schedule_type'] == 'interval'
+    assert isinstance(call_kwargs['next_run'], datetime.datetime)
+    assert call_kwargs['next_run'].tzinfo is not None  # tz-aware
+
+@pytest.mark.unit
+def test_register_prompt_time_timezone_aware_future(mock_dependencies):
+    """One-time schedule accepts tz-aware ISO timestamp in the future."""
+    future_aware = (datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=1)).isoformat()
+    args = ["register", "--agent-id", "test-agent", "--prompt", "Hello", "--time", future_aware]
+    run_main_with_args(args)
+    mock_dependencies["add_schedule"].assert_called_once()
+    call_kwargs = mock_dependencies["add_schedule"].call_args[1]
+    assert call_kwargs['schedule_type'] == 'once'
+    assert isinstance(call_kwargs['next_run'], datetime.datetime)
+    assert call_kwargs['next_run'].tzinfo is not None
+
+@pytest.mark.unit
 def test_register_prompt_invalid_agent(mock_dependencies):
     """Test registering a prompt with an invalid agent."""
     mock_dependencies["validate_agent_exists"].return_value = {"status": "error", "exists": False, "message": "Agent not found"}

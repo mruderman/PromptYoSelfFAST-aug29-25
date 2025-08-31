@@ -11,7 +11,7 @@ import json
 import sys
 import time
 from typing import Dict, Any
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from dateutil import parser as date_parser
 from croniter import croniter
 
@@ -141,7 +141,9 @@ def register_prompt(args: Dict[str, Any]) -> Dict[str, Any]:
         if time_str:
             # One-time schedule
             next_run = date_parser.parse(time_str)
-            if next_run <= datetime.utcnow():
+            # Compare using a matching reference clock: local for naive, same tz for aware
+            now_ref = datetime.now(tz=next_run.tzinfo) if next_run.tzinfo else datetime.now()
+            if next_run <= now_ref:
                 return {"error": "Scheduled time must be in the future"}
             
             schedule_type = "once"
@@ -175,7 +177,9 @@ def register_prompt(args: Dict[str, Any]) -> Dict[str, Any]:
                 # Handle start_at parameter for interval schedules
                 if start_at:
                     next_run = date_parser.parse(start_at)
-                    if next_run <= datetime.utcnow():
+                    # Use matching reference clock for validity check
+                    start_ref = datetime.now(tz=next_run.tzinfo) if next_run.tzinfo else datetime.now()
+                    if next_run <= start_ref:
                         return {"error": "Start time must be in the future"}
                 else:
                     next_run = datetime.utcnow() + timedelta(seconds=seconds)

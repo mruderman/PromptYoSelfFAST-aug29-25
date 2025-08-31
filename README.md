@@ -5,35 +5,82 @@
 This repository contains the PromptYoSelf plugin and a [FastMCP](https://gofastmcp.com/)-based server to expose it as a set of tools for a Model Context Protocol (MCP) client, such as a [Letta](https://docs.letta.com/) agent.
 
 - **Server file:** [promptyoself_mcp_server.py](promptyoself_mcp_server.py)
-- **Developer Guide:** [promptyoself/AGENTS.md](promptyoself/AGENTS.md)
+- **Developer Guide:** [AGENTS.md](AGENTS.md)
 - **API reference:** [docs/promptyoself-tools.md](docs/promptyoself-tools.md)
 
 ## 🚀 Quick Start
 
-1.  **Install Dependencies**
+1. **Install Dependencies**
 
-    This project has two sets of dependencies. Install both.
-    ```bash
-    # Install server and test dependencies
-    pip install -r requirements.txt
+  This project has two sets of dependencies. Install both.
 
-    # Install PromptYoSelf plugin dependencies
-    pip install -r promptyoself/requirements.txt
-    ```
+```bash
+# Install server and test dependencies
+pip install -r requirements.txt
 
-2.  **Run the Server**
+# Install PromptYoSelf plugin dependencies
+pip install -r promptyoself/requirements.txt
+```
 
-    The server can be run in two modes:
+1. **Run the Server**
 
-    *   **Standard I/O (stdio):** This is the simplest mode and is best for local development or connecting to local agents.
-        ```bash
-        python promptyoself_mcp_server.py
-        ```
+  The server can be run in two modes:
 
-    *   **HTTP:** This runs the server as a web service, which is necessary for connecting to remote agents (e.g., a Letta agent running in the cloud or a Docker container).
-        ```bash
-        python promptyoself_mcp_server.py --transport http --host 127.0.0.1 --port 8000 --path /mcp
-        ```
+- Standard I/O (stdio): simplest for local development or connecting to local agents.
+
+```bash
+python promptyoself_mcp_server.py
+```
+
+- HTTP: run as a web service to connect remote agents (cloud/Docker, etc.).
+
+```bash
+python promptyoself_mcp_server.py --transport http --host 127.0.0.1 --port 8000 --path /mcp
+```
+
+- HTTP over Tailscale: bind to your tailnet IP for private access.
+
+```bash
+# Convenience script (auto-detects your Tailscale IPv4)
+bash start.sh tailscale
+
+# Or explicit host (replace with your tailscale IP)
+python promptyoself_mcp_server.py --transport http --host 100.x.y.z --port 8000 --path /mcp
+```
+
+Note: The MCP HTTP transport is not a plain REST API; use an MCP client (e.g., FastMCP Client). A direct browser GET to /mcp/* will 404.
+
+## 🛠️ Development setup
+
+Choose one of the following:
+
+- Makefile (recommended)
+
+```bash
+make setup     # creates .venv and installs all deps
+make test      # runs pytest with repo's pytest.ini
+make run       # runs the FastMCP server (stdio)
+```
+
+- VS Code tasks
+  - Run: "Python: Create venv"
+  - Then: "Python: Install deps (root)" and "Python: Install deps (plugin)"
+  - Test: "Test: Pytest"
+  - Run: "Run: MCP Server (stdio)" or "Run: MCP Server (http)"
+
+- Manual
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+pip install -r promptyoself/requirements.txt
+pytest
+```
+
+Environment file:
+
+- Copy `.env.example` to `.env` and set values for local/dev as needed.
 
 ## 🔐 Configuration
 
@@ -44,18 +91,20 @@ The server requires configuration for connecting to your Letta instance. **Never
 ### Local Development Setup
 
 1. Copy the example configuration file:
-   ```bash
-   cp .env.example .env
-   ```
 
-2. Edit `.env` and set your actual values:
-   ```bash
-   # For macOS/Linux:
-   export LETTA_SERVER_PASSWORD="your_actual_password_here"
-   
-   # For Windows PowerShell:
-   $env:LETTA_SERVER_PASSWORD="your_actual_password_here"
-   ```
+```bash
+cp .env.example .env
+```
+
+1. Edit `.env` and set your actual values:
+
+```bash
+# For macOS/Linux:
+export LETTA_SERVER_PASSWORD="your_actual_password_here"
+
+# For Windows PowerShell:
+$env:LETTA_SERVER_PASSWORD="your_actual_password_here"
+```
 
 ### Docker Compose Configuration
 
@@ -99,20 +148,31 @@ jobs:
 This project uses `pytest` for testing. The test configuration is defined in `pytest.ini`.
 
 To run the full test suite, including coverage analysis:
+
 ```bash
 pytest
 ```
 
 This will automatically:
+
 - Discover and run all tests in the `tests/` directory.
 - Measure code coverage for the `promptyoself_mcp_server` and `promptyoself` modules.
 - Generate a coverage report in the terminal and as an HTML report in the `htmlcov/` directory.
-- Fail the test run if code coverage is below 80%.
+- Fail the test run if code coverage is below 35% (temporary). We plan to raise this back toward 80% as tests are added.
 
 To run only a specific category of tests (e.g., unit tests):
+
 ```bash
 pytest tests/unit/
 ```
+
+## ▶️ Next steps
+
+- Run the server in stdio and connect from your MCP client.
+- Try listing tools and calling health to verify config.
+- Register a test schedule, then run execute once to see it fire.
+- Open `docs/promptyoself-tools.md` for tool inputs/outputs.
+- File issues or ideas in the repository tracker.
 
 ## 📄 License
 
@@ -123,5 +183,5 @@ This project is licensed under the Creative Commons Attribution-ShareAlike 4.0 I
 For support, questions, or contributions:
 
 - **Author**: Mark Rizzn Hopkins
-- **Repository**: https://github.com/actuallyrizzn/sanctum-letta-mcp
-- **Issues**: https://github.com/actuallyrizzn/sanctum-letta-mcp/issues
+- **Repository**: <https://github.com/actuallyrizzn/sanctum-letta-mcp>
+- **Issues**: <https://github.com/actuallyrizzn/sanctum-letta-mcp/issues>

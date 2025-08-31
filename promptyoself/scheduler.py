@@ -134,8 +134,9 @@ def execute_due_prompts() -> List[Dict[str, Any]]:
                 }
                 
                 if success:
-                    # Increment repetition count
-                    new_repetition_count = unified_reminder.repetition_count + 1
+                    # Increment repetition count (treat None as 0 for newly constructed objects)
+                    current_count = unified_reminder.repetition_count or 0
+                    new_repetition_count = current_count + 1
                     update_data["repetition_count"] = new_repetition_count
                     
                     # Check if we've reached the maximum repetitions

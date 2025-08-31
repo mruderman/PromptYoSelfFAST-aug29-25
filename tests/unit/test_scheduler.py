@@ -30,49 +30,46 @@ def test_calculate_next_run_for_schedule_cron(mock_calculate_next_run):
 def test_calculate_next_run_for_schedule_interval():
     """Test next run calculation for an interval schedule."""
     reminder = UnifiedReminder(id=1, agent_id='a', message='m', schedule_type="interval", schedule_value="15m", active=True)
-    now = datetime.utcnow()
-    with patch('datetime.datetime') as mock_dt:
-        mock_dt.utcnow.return_value = now
-        next_run = scheduler.calculate_next_run_for_schedule(reminder)
-        assert next_run == now + timedelta(minutes=15)
+    before = datetime.utcnow()
+    next_run = scheduler.calculate_next_run_for_schedule(reminder)
+    after = datetime.utcnow()
+    # Expect approximately 15 minutes from 'now'; allow a small delta for runtime
+    assert timedelta(minutes=15) - timedelta(seconds=2) <= (next_run - before) <= timedelta(minutes=15) + timedelta(seconds=2)
 
 @pytest.fixture
-def mock_db_and_api():
-    """Fixture to mock DB and API dependencies for execute_due_prompts."""
-    with patch('promptyoself.scheduler.db') as mock_db, \
+def mock_exec_env():
+    """Mock get_due_schedules, update_schedule, and send_prompt_to_agent for execute_due_prompts tests."""
+    with patch('promptyoself.scheduler.get_due_schedules') as mock_get_due, \
+         patch('promptyoself.scheduler.update_schedule') as mock_update, \
          patch('promptyoself.scheduler.send_prompt_to_agent') as mock_send:
-
-        mock_session = MagicMock()
-        mock_db.get_session.return_value = mock_session
-
-        yield mock_db, mock_send, mock_session
+        yield mock_get_due, mock_update, mock_send
 
 @pytest.mark.unit
-def test_execute_due_prompts_once_schedule(mock_db_and_api):
-    """Test executing a 'once' schedule."""
-    mock_db, mock_send, mock_session = mock_db_and_api
+def test_execute_due_prompts_once_schedule(mock_exec_env):
+    """Test executing a 'once' schedule deactivates it after delivery."""
+    mock_get_due, mock_update, mock_send = mock_exec_env
     mock_send.return_value = True
-
-    due_reminder = UnifiedReminder(id=1, agent_id="agent1", message="Test", schedule_type="once", active=True)
-    mock_db.get_due_schedules.return_value = [due_reminder]
+    due_reminder = UnifiedReminder(id=1, agent_id="agent1", message="Test", schedule_type="once", active=True, next_run=datetime.utcnow())
+    mock_get_due.return_value = [due_reminder]
 
     results = scheduler.execute_due_prompts()
 
     assert len(results) == 1
     assert results[0]["delivered"] is True
     mock_send.assert_called_once_with("agent1", "Test")
-    assert due_reminder.active is False
-    mock_session.commit.assert_called_once()
+    # For 'once', next_run becomes None and active False
+    called_kwargs = mock_update.call_args.kwargs
+    assert called_kwargs.get("active") is False
 
 
 @pytest.mark.unit
-def test_execute_due_prompts_interval_schedule(mock_db_and_api):
-    """Test executing an interval schedule."""
-    mock_db, mock_send, mock_session = mock_db_and_api
+def test_execute_due_prompts_interval_schedule(mock_exec_env):
+    """Test executing an interval schedule updates repetition_count and next_run."""
+    mock_get_due, mock_update, mock_send = mock_exec_env
     mock_send.return_value = True
 
-    due_reminder = UnifiedReminder(id=1, agent_id="agent1", message="Test", schedule_type="interval", schedule_value="1h", active=True, repetition_count=0)
-    mock_db.get_due_schedules.return_value = [due_reminder]
+    due_reminder = UnifiedReminder(id=1, agent_id="agent1", message="Test", schedule_type="interval", schedule_value="1h", active=True, repetition_count=0, next_run=datetime.utcnow())
+    mock_get_due.return_value = [due_reminder]
 
     with patch('promptyoself.scheduler.calculate_next_run_for_schedule') as mock_calc:
         new_next_run = datetime.utcnow() + timedelta(hours=1)
@@ -82,60 +79,62 @@ def test_execute_due_prompts_interval_schedule(mock_db_and_api):
 
         assert len(results) == 1
         assert results[0]["delivered"] is True
-        assert due_reminder.active is True
-        assert due_reminder.next_run == new_next_run
-        assert due_reminder.repetition_count == 1
-        mock_session.commit.assert_called_once()
+        # update_schedule called with incremented repetition_count and next_run
+        called_kwargs = mock_update.call_args.kwargs
+        assert called_kwargs.get("repetition_count") == 1
+        assert called_kwargs.get("next_run") == new_next_run
 
 @pytest.mark.unit
-def test_execute_due_prompts_delivery_failure(mock_db_and_api):
-    """Test when prompt delivery fails."""
-    mock_db, mock_send, mock_session = mock_db_and_api
+def test_execute_due_prompts_delivery_failure(mock_exec_env):
+    """Test when prompt delivery fails we only update last_run, not deactivate."""
+    mock_get_due, mock_update, mock_send = mock_exec_env
     mock_send.return_value = False
 
     due_reminder = UnifiedReminder(id=1, agent_id="agent1", message="Test", schedule_type="once", active=True, next_run=datetime.utcnow())
-    mock_db.get_due_schedules.return_value = [due_reminder]
+    mock_get_due.return_value = [due_reminder]
 
     results = scheduler.execute_due_prompts()
 
     assert len(results) == 1
     assert results[0]["delivered"] is False
-    assert due_reminder.active is True # Should not be deactivated
-    mock_session.commit.assert_not_called()
+    called_kwargs = mock_update.call_args.kwargs
+    assert "last_run" in called_kwargs
+    assert called_kwargs.get("active") is None
 
 @pytest.mark.unit
-def test_execute_due_prompts_max_repetitions(mock_db_and_api):
+def test_execute_due_prompts_max_repetitions(mock_exec_env):
     """Test that an interval schedule is deactivated after max_repetitions."""
-    mock_db, mock_send, mock_session = mock_db_and_api
+    mock_get_due, mock_update, mock_send = mock_exec_env
     mock_send.return_value = True
 
     due_reminder = UnifiedReminder(
         id=1, agent_id="agent1", message="Test",
         schedule_type="interval", schedule_value="1h", active=True,
-        repetition_count=4, max_repetitions=5
+        repetition_count=4, max_repetitions=5, next_run=datetime.utcnow()
     )
-    mock_db.get_due_schedules.return_value = [due_reminder]
+    mock_get_due.return_value = [due_reminder]
 
     results = scheduler.execute_due_prompts()
 
     assert len(results) == 1
     assert results[0]["delivered"] is True
     assert results[0]["completed"] is True
-    assert due_reminder.active is False
-    assert due_reminder.repetition_count == 5
-    mock_session.commit.assert_called_once()
+    called_kwargs = mock_update.call_args.kwargs
+    assert called_kwargs.get("active") is False
+    assert called_kwargs.get("repetition_count") == 5
 
 @pytest.mark.unit
-@patch('time.sleep')
-@patch('apscheduler.schedulers.blocking.BlockingScheduler')
-def test_run_scheduler_loop(mock_scheduler_class, mock_sleep):
-    """Test the scheduler loop runs until a KeyboardInterrupt."""
-    mock_scheduler_instance = MagicMock()
-    mock_scheduler_instance.start.side_effect = KeyboardInterrupt
-    mock_scheduler_class.return_value = mock_scheduler_instance
+@patch('time.sleep', side_effect=KeyboardInterrupt)
+@patch('promptyoself.scheduler.BackgroundScheduler')
+def test_run_scheduler_loop(mock_bg_sched_class, _mock_sleep):
+    """Test the scheduler loop starts and stops cleanly on KeyboardInterrupt."""
+    mock_bg_sched = MagicMock()
+    mock_bg_sched_class.return_value = mock_bg_sched
 
-    scheduler.run_scheduler_loop(interval_seconds=10)
+    # Also patch execute_due_prompts so the job doesn't hit anything
+    with patch('promptyoself.scheduler.execute_due_prompts', return_value=[]):
+        scheduler.run_scheduler_loop(interval_seconds=10)
 
-    mock_scheduler_instance.add_job.assert_called_once()
-    mock_scheduler_instance.start.assert_called_once()
-    mock_scheduler_instance.shutdown.assert_called_once()
+    assert mock_bg_sched.add_job.call_count == 1
+    assert mock_bg_sched.start.call_count == 1
+    assert mock_bg_sched.shutdown.call_count == 1
