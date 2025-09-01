@@ -48,6 +48,29 @@ done
 
 Test by messaging the agent (example payload in this repo at `scripts/test_letta_agent_message.sh`).
 
+## Auto‑delivery of scheduled prompts (Executor)
+
+PromptYoSelf includes an execution loop that delivers due prompts. Enable it automatically at server start so agents don’t have to run `promptyoself_execute`:
+
+Options:
+
+- start.sh flags (recommended if you launch MCP via this script):
+
+```bash
+./start.sh http --host tailscale --port 8000 --path /mcp \
+  --executor --executor-interval 60
+```
+
+- Environment variables (if you run without start.sh):
+
+```bash
+export PROMPTYOSELF_EXECUTOR_AUTOSTART=true
+export PROMPTYOSELF_EXECUTOR_INTERVAL=60
+python promptyoself_mcp_server.py --transport http --host 0.0.0.0 --port 8000 --path /mcp
+```
+
+This spawns a background process inside the MCP server that runs the execute loop and delivers prompts continuously.
+
 ## Server Configuration (Letta)
 
 Update `~/.letta/mcp_config.json` (bound from your host). Example entry:

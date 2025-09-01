@@ -307,6 +307,10 @@ Examples:
 
 # Equivalent shorthand: http but with host resolved to Tailscale IP
 ./start.sh http --host tailscale --port 8000 --path /mcp
+
+# Start background executor loop (auto‑deliver prompts)
+./start.sh http --host tailscale --port 8000 --path /mcp \
+  --executor --executor-interval 60
 ```
 
 ## 📄 License

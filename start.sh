@@ -24,6 +24,8 @@ DEFAULT_AGENT_ID=""
 ENABLE_SINGLE_FALLBACK="false"
 ENV_FILE=""
 USE_TAILSCALE="false"
+ENABLE_EXECUTOR="false"
+EXECUTOR_INTERVAL="60"
 
 # Parse args
 while [[ $# -gt 0 ]]; do
@@ -44,6 +46,10 @@ while [[ $# -gt 0 ]]; do
       PATH_ARG="${2:-}"; shift 2 ;;
     --tailscale)
       USE_TAILSCALE="true"; shift ;;
+    --executor)
+      ENABLE_EXECUTOR="true"; shift ;;
+    --executor-interval)
+      EXECUTOR_INTERVAL="${2:-60}"; shift 2 ;;
     *)
       echo "Unknown argument: $1" >&2
       echo "Usage: $0 [stdio|http|sse|tailscale] [--agent-id ID] [--single] [--env-file FILE] [--host HOST|tailscale] [--port PORT] [--path PATH] [--tailscale]" >&2
@@ -72,6 +78,12 @@ fi
 # Enable single-agent fallback if requested
 if [[ "$ENABLE_SINGLE_FALLBACK" == "true" ]]; then
   export PROMPTYOSELF_USE_SINGLE_AGENT_FALLBACK=true
+fi
+
+# Enable background executor if requested
+if [[ "$ENABLE_EXECUTOR" == "true" ]]; then
+  export PROMPTYOSELF_EXECUTOR_AUTOSTART=true
+  export PROMPTYOSELF_EXECUTOR_INTERVAL="$EXECUTOR_INTERVAL"
 fi
 
 resolve_tailscale_ip() {
@@ -117,7 +129,11 @@ case "$TRANSPORT" in
     else
       echo "Starting MCP server on http://${HOST}:${PORT}${PATH_ARG}"
     fi
-    exec python promptyoself_mcp_server.py --transport http --host "$HOST" --port "$PORT" --path "$PATH_ARG"
+    ARGS=(--transport http --host "$HOST" --port "$PORT" --path "$PATH_ARG")
+    if [[ "$ENABLE_EXECUTOR" == "true" ]]; then
+      ARGS+=(--autostart-executor --executor-interval "$EXECUTOR_INTERVAL")
+    fi
+    exec python promptyoself_mcp_server.py "${ARGS[@]}"
     ;;
   sse)
     echo "Starting MCP SSE server on ${HOST}:${PORT}"

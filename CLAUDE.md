@@ -47,6 +47,20 @@ python promptyoself_mcp_server.py --transport http --host 100.x.y.z --port 8000 
 
 # Note: MCP HTTP is not a plain REST API—use an MCP client (e.g., FastMCP Client)
 
+### Auto‑delivery of scheduled prompts
+
+Enable the executor loop at launch so agents don’t have to call `promptyoself_execute`:
+
+```bash
+# start.sh flags
+./start.sh http --host tailscale --port 8000 --path /mcp --executor --executor-interval 60
+
+# or environment variables (without start.sh)
+export PROMPTYOSELF_EXECUTOR_AUTOSTART=true
+export PROMPTYOSELF_EXECUTOR_INTERVAL=60
+python promptyoself_mcp_server.py --transport http --host 0.0.0.0 --port 8000 --path /mcp
+```
+
 ## Letta Integration (HTTP over Tailscale)
 
 - Configure Letta to connect to this FastMCP server over HTTP (streamable) via your tailnet IP.

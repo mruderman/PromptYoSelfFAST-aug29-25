@@ -85,6 +85,55 @@ mcp = FastMCP(
 # In-memory per-client/session default agent mapping
 _SCOPED_AGENT_DEFAULTS: dict[str, str] = {}
 
+# Optional background executor process handle
+_EXECUTOR_PROCESS = None  # type: ignore[assignment]
+
+def _start_executor_loop_if_enabled() -> None:
+    """Optionally start the scheduler execute loop in a background process.
+
+    Controlled by env PROMPTYOSELF_EXECUTOR_AUTOSTART=true/1 and interval
+    PROMPTYOSELF_EXECUTOR_INTERVAL (default 60 seconds).
+    """
+    # Opt-out by default: autostart unless explicitly disabled
+    autostart = os.getenv("PROMPTYOSELF_EXECUTOR_AUTOSTART", "true").lower() in ("1", "true", "yes")
+    if not autostart:
+        return
+    try:
+        interval = int(os.getenv("PROMPTYOSELF_EXECUTOR_INTERVAL", "60"))
+    except Exception:
+        interval = 60
+    try:
+        import multiprocessing as _mp
+        def _runner():
+            try:
+                args = {"loop": True, "interval": interval}
+                _execute_prompts(args)  # blocks loop internally
+            except Exception as exc:  # pragma: no cover (background)
+                logger.exception("Background executor loop crashed: %s", exc)
+        global _EXECUTOR_PROCESS
+        _EXECUTOR_PROCESS = _mp.Process(target=_runner, daemon=True)
+        _EXECUTOR_PROCESS.start()
+        logger.info("Started background executor loop", extra={"interval": interval})
+    except Exception as exc:  # pragma: no cover (background)
+        logger.exception("Failed to start background executor loop: %s", exc)
+
+
+@mcp.tool(name="promptyoself_executor_status")
+async def _promptyoself_executor_status_tool(
+    ctx: Context | None = None,
+) -> Dict[str, Any]:
+    """Return background executor loop status (running and interval)."""
+    try:
+        running = bool(_EXECUTOR_PROCESS is not None and getattr(_EXECUTOR_PROCESS, "is_alive", lambda: False)())
+        try:
+            interval = int(os.getenv("PROMPTYOSELF_EXECUTOR_INTERVAL", "60"))
+        except Exception:
+            interval = None
+        return {"status": "ok", "running": running, "interval": interval}
+    except Exception as e:
+        logger.exception("executor_status failed")
+        return {"error": f"Status failed: {e}"}
+
 
 def _get_ctx_scope_key(ctx: Optional[Context]) -> Optional[str]:
     """Derive a stable-ish scope key for per-client defaults.
@@ -1071,9 +1120,18 @@ def main() -> None:
     parser.add_argument("--port", type=int, default=int(os.getenv("FASTMCP_PORT", "8000")), help="Port for HTTP/SSE")
     parser.add_argument("--path", default=os.getenv("FASTMCP_PATH", "/mcp"), help="Path for HTTP")
     parser.add_argument("--log-level", default=os.getenv("FASTMCP_LOG_LEVEL", None), help="Override server log level")
+    parser.add_argument("--autostart-executor", dest="autostart_executor", action="store_true", help="Start background execute loop on launch")
+    parser.add_argument("--executor-interval", dest="executor_interval", type=int, default=None, help="Background execute loop interval (seconds)")
     args = parser.parse_args()
 
     logger.info("Starting PromptYoSelf MCP Server", extra={"transport": args.transport})
+
+    # Optional background executor
+    if getattr(args, "autostart_executor", False):
+        os.environ["PROMPTYOSELF_EXECUTOR_AUTOSTART"] = "true"
+    if getattr(args, "executor_interval", None) is not None:
+        os.environ["PROMPTYOSELF_EXECUTOR_INTERVAL"] = str(args.executor_interval)
+    _start_executor_loop_if_enabled()
 
     if args.transport == "stdio":
         mcp.run(transport="stdio")
