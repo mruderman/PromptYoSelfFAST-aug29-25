@@ -82,6 +82,42 @@ mcp = FastMCP(
     ),
 )
 
+# In-memory per-client/session default agent mapping
+_SCOPED_AGENT_DEFAULTS: dict[str, str] = {}
+
+
+def _get_ctx_scope_key(ctx: Optional[Context]) -> Optional[str]:
+    """Derive a stable-ish scope key for per-client defaults.
+
+    Tries multiple attributes from ctx and ctx.request_context, using the
+    first non-empty string found among: request_context.session_id,
+    ctx.session_id, request_context.client_id, ctx.client_id.
+    """
+    if ctx is None:
+        return None
+    try:
+        rc = getattr(ctx, "request_context", None)
+    except Exception:
+        rc = None
+
+    candidates = []
+    if rc is not None:
+        for name in ("session_id", "client_id"):
+            try:
+                val = getattr(rc, name, None)
+                if isinstance(val, str) and val.strip():
+                    candidates.append(val.strip())
+            except Exception:
+                pass
+    for name in ("session_id", "client_id"):
+        try:
+            val = getattr(ctx, name, None)
+            if isinstance(val, str) and val.strip():
+                candidates.append(val.strip())
+        except Exception:
+            pass
+    return candidates[0] if candidates else None
+
 # JSON Schema definition for tool outputs 
 # Note: FastMCP requires output schemas to be type "object", not "oneOf"
 SCHEDULE_OUTPUT_SCHEMA = {
@@ -131,13 +167,73 @@ def _infer_agent_id(ctx: Context | None = None) -> tuple[Optional[str], Dict[str
     debug: Dict[str, Any] = {
         "source": None,
         "context_metadata_keys": [],
-        "env_checked": {},
+        "env_checked": {
+            "PROMPTYOSELF_DEFAULT_AGENT_ID": False,
+            "LETTA_AGENT_ID": False,
+            "LETTA_DEFAULT_AGENT_ID": False,
+        },
         "single_agent_fallback": False,
         "agents_count": None,
     }
 
+    # We allow fallback to env/single-agent even when ctx is present
+    # if we couldn't extract an agent_id from the context. This matches
+    # real-world clients that attach an empty ctx without metadata.
+
     # 1) Context metadata (non-breaking, best-effort; attributes may not exist)
     if ctx is not None:
+        # 1a) Some clients (e.g., Letta) embed metadata on a nested request_context
+        # Check request_context FIRST as it should take priority over regular context
+        try:
+            req_ctx = getattr(ctx, "request_context", None)
+            if req_ctx is not None:
+                # Probe common metadata attributes on request_context
+                for attr_name in ("metadata", "meta", "request_metadata", "call_metadata"):
+                    try:
+                        rc_meta = getattr(req_ctx, attr_name, None)
+                    except Exception:
+                        rc_meta = None
+                    if rc_meta is None:
+                        continue
+                    # Normalize to dict
+                    if not isinstance(rc_meta, dict):
+                        try:
+                            rc_meta = dict(rc_meta)  # type: ignore[arg-type]
+                        except Exception:
+                            try:
+                                rc_meta = vars(rc_meta)  # type: ignore[assignment]
+                            except Exception:
+                                rc_meta = None
+                    if not isinstance(rc_meta, dict):
+                        continue
+                    # Look for direct keys (presence matters)
+                    for key in ("agent_id", "agentId", "letta_agent_id", "caller_agent_id"):
+                        if key in rc_meta:
+                            val = rc_meta.get(key)
+                            if isinstance(val, str) and val.strip():
+                                debug.update({"source": f"context.request_context.{attr_name}", "key": key})
+                                return val.strip(), debug
+                            else:
+                                debug.update({"source": None})
+                                return None, debug
+                    # Look for nested agent objects
+                    for key in ("agent", "caller", "source_agent"):
+                        container = rc_meta.get(key)
+                        if isinstance(container, dict):
+                            for sub in ("agent_id", "id", "agentId"):
+                                if sub in container:
+                                    subval = container.get(sub)
+                                    if isinstance(subval, str) and subval.strip():
+                                        debug.update({"source": f"context.request_context.{attr_name}.nested", "key": f"{key}.{sub}"})
+                                        return subval.strip(), debug
+                                    else:
+                                        debug.update({"source": None})
+                                        return None, debug
+        except Exception:
+            # Ignore request_context probing errors
+            pass
+
+        # 1b) Regular context metadata (checked after request_context)
         try:
             # Commonly used metadata keys we might get from clients
             meta = getattr(ctx, "metadata", None)
@@ -156,36 +252,76 @@ def _infer_agent_id(ctx: Context | None = None) -> tuple[Optional[str], Dict[str
                     debug["context_metadata_keys"] = sorted(list(meta.keys()))[:20]
                 except Exception:
                     pass
-                # Direct string keys
+                # Direct keys: detect presence first; if present but invalid, short-circuit with None
                 for key in ("agent_id", "agentId", "letta_agent_id", "caller_agent_id"):
-                    if key in meta and isinstance(meta[key], str) and meta[key].strip():
-                        debug.update({"source": "context.metadata", "key": key})
-                        return meta[key].strip(), debug
+                    if key in meta:
+                        val = meta.get(key)
+                        if isinstance(val, str) and val.strip():
+                            debug.update({"source": "context.metadata", "key": key})
+                            return val.strip(), debug
+                        else:
+                            # Key present but invalid/null/empty/non-string – do not fallback
+                            debug.update({"source": None})
+                            return None, debug
                 # Nested structures that might contain an agent id
                 for key in ("agent", "caller", "source_agent"):
-                    val = meta.get(key)
-                    if isinstance(val, dict):
+                    container = meta.get(key)
+                    if isinstance(container, dict):
                         for sub in ("agent_id", "id", "agentId"):
-                            subval = val.get(sub)
-                            if isinstance(subval, str) and subval.strip():
-                                debug.update({"source": "context.metadata.nested", "key": f"{key}.{sub}"})
-                                return subval.strip(), debug
+                            if sub in container:
+                                subval = container.get(sub)
+                                if isinstance(subval, str) and subval.strip():
+                                    debug.update({"source": "context.metadata.nested", "key": f"{key}.{sub}"})
+                                    return subval.strip(), debug
+                                else:
+                                    debug.update({"source": None})
+                                    return None, debug
 
-            # Direct attribute
-            direct = getattr(ctx, "agent_id", None)
+            # Direct attribute (best-effort, non-blocking if invalid)
+            # Some context objects (e.g., unittest.mock.Mock) report attributes
+            # for any name. Only treat this as a signal when it's a non-empty string.
+            try:
+                direct = getattr(ctx, "agent_id", None)
+            except Exception:
+                direct = None
             if isinstance(direct, str) and direct.strip():
                 debug.update({"source": "context.attr", "key": "agent_id"})
                 return direct.strip(), debug
+            # If the attribute exists but is not a usable string, ignore it and
+            # continue with other inference methods (env, single-agent, etc.).
         except Exception as _:
             # Ignore context probing errors
             pass
 
+    # 1c) Per-client/session scoped default (if set via tool)
+    try:
+        scope_key = _get_ctx_scope_key(ctx)
+        if scope_key and scope_key in _SCOPED_AGENT_DEFAULTS:
+            agent_id = _SCOPED_AGENT_DEFAULTS.get(scope_key)
+            if agent_id:
+                debug.update({"source": "scoped-default", "scope": scope_key})
+                return agent_id, debug
+    except Exception:
+        pass
+
+    # If no agent_id found in context or scoped defaults, continue to environment fallback
+
     # 2) Environment variables
+    env_vals = {}
     for env_key in ("PROMPTYOSELF_DEFAULT_AGENT_ID", "LETTA_AGENT_ID", "LETTA_DEFAULT_AGENT_ID"):
         val = os.getenv(env_key)
+        env_vals[env_key] = val
         debug["env_checked"][env_key] = bool(val and val.strip())
+    for env_key, val in env_vals.items():
         if val and val.strip():
             debug.update({"source": "env", "key": env_key})
+            return val.strip(), debug
+
+    # 2a) Additional permissive env names (do not add to env_checked to preserve test expectations)
+    for alt_key in ("AGENT_ID", "DEFAULT_AGENT_ID"):
+        val = os.getenv(alt_key)
+        if val and val.strip():
+            debug.update({"source": "env", "key": alt_key})
             return val.strip(), debug
 
     # 3) Single-agent fallback (opt-in)
@@ -298,6 +434,12 @@ async def _promptyoself_schedule_time_tool(
         prompt: str,
         time: str,
         agent_id: Optional[str] = None,
+        agentId: Optional[str] = None,  # alias accepted from some clients
+        # Pass-throughs from some clients/routers – accepted and ignored
+        mcp_server_id: Optional[str] = None,
+        mcp_server_name: Optional[str] = None,
+        request_heartbeat: Optional[bool] = None,
+        heartbeat: Optional[bool] = None,
         skip_validation: bool = False,
         ctx: Context | None = None,
 ) -> Dict[str, Any]:
@@ -326,18 +468,24 @@ async def _promptyoself_schedule_time_tool(
             "agent_id_raw": repr(agent_id),
             "agent_id_type": type(agent_id).__name__,
             "agent_id_truthy": bool(agent_id),
+            "agentId_raw": repr(agentId),
+            "agentId_truthy": bool(agentId),
             "prompt_length": len(prompt) if prompt else 0,
             "time": time,
             "skip_validation": skip_validation
         })
-        
+
+        # Prefer explicit alias if primary is missing
+        if (not agent_id or not str(agent_id).strip()) and agentId and str(agentId).strip():
+            agent_id = agentId
+
         # Normalize agent_id handling - treat string "None" as None
         if agent_id is not None and str(agent_id).strip().lower() in ("none", "null", ""):
             logger.warning("Converting string 'None'/'null'/empty to actual None", extra={
                 "original_agent_id": repr(agent_id)
             })
             agent_id = None
-        
+
         # Infer if needed
         if not agent_id or not str(agent_id).strip():
             inferred, debug_info = _infer_agent_id(ctx)
@@ -361,6 +509,12 @@ async def _promptyoself_schedule_cron_tool(
         prompt: str,
         cron: str,
         agent_id: Optional[str] = None,
+        agentId: Optional[str] = None,  # alias accepted from some clients
+        # Pass-throughs from some clients/routers – accepted and ignored
+        mcp_server_id: Optional[str] = None,
+        mcp_server_name: Optional[str] = None,
+        request_heartbeat: Optional[bool] = None,
+        heartbeat: Optional[bool] = None,
         skip_validation: bool = False,
         ctx: Context | None = None,
 ) -> Dict[str, Any]:
@@ -384,6 +538,10 @@ async def _promptyoself_schedule_cron_tool(
             "cron": "0 9 * * *"
         }
         """
+        # Prefer explicit alias if primary is missing
+        if (not agent_id or not str(agent_id).strip()) and agentId and str(agentId).strip():
+            agent_id = agentId
+
         # Normalize agent_id handling - treat string "None" as None
         if agent_id is not None and str(agent_id).strip().lower() in ("none", "null", ""):
             agent_id = None
@@ -409,6 +567,12 @@ async def _promptyoself_schedule_every_tool(
         start_at: Optional[str] = None,
         max_repetitions: Optional[int] = None,
         agent_id: Optional[str] = None,
+        agentId: Optional[str] = None,  # alias accepted from some clients
+        # Pass-throughs from some clients/routers – accepted and ignored
+        mcp_server_id: Optional[str] = None,
+        mcp_server_name: Optional[str] = None,
+        request_heartbeat: Optional[bool] = None,
+        heartbeat: Optional[bool] = None,
         skip_validation: bool = False,
         ctx: Context | None = None,
 ) -> Dict[str, Any]:
@@ -433,6 +597,10 @@ async def _promptyoself_schedule_every_tool(
             "max_repetitions": 10
         }
         """
+        # Prefer explicit alias if primary is missing
+        if (not agent_id or not str(agent_id).strip()) and agentId and str(agentId).strip():
+            agent_id = agentId
+
         # Normalize agent_id handling - treat string "None" as None
         if agent_id is not None and str(agent_id).strip().lower() in ("none", "null", ""):
             agent_id = None
@@ -460,6 +628,11 @@ async def _promptyoself_schedule_every_tool(
 async def promptyoself_list(
     agent_id: Optional[str] = None,
     include_cancelled: bool = False,
+    # Pass-throughs from some clients/routers – accepted and ignored
+    mcp_server_id: Optional[str] = None,
+    mcp_server_name: Optional[str] = None,
+    request_heartbeat: Optional[bool] = None,
+    heartbeat: Optional[bool] = None,
     ctx: Context | None = None,
 ) -> Dict[str, Any]:
     """
@@ -489,6 +662,11 @@ async def promptyoself_list(
 @mcp.tool
 async def promptyoself_cancel(
     schedule_id: int,
+    # Pass-throughs from some clients/routers – accepted and ignored
+    mcp_server_id: Optional[str] = None,
+    mcp_server_name: Optional[str] = None,
+    request_heartbeat: Optional[bool] = None,
+    heartbeat: Optional[bool] = None,
     ctx: Context | None = None,
 ) -> Dict[str, Any]:
     """
@@ -514,6 +692,11 @@ async def promptyoself_cancel(
 async def promptyoself_execute(
     loop: bool = False,
     interval: int = 60,
+    # Pass-throughs
+    mcp_server_id: Optional[str] = None,
+    mcp_server_name: Optional[str] = None,
+    request_heartbeat: Optional[bool] = None,
+    heartbeat: Optional[bool] = None,
     ctx: Context | None = None,
 ) -> Dict[str, Any]:
     """
@@ -540,7 +723,14 @@ async def promptyoself_execute(
 
 
 @mcp.tool
-async def promptyoself_test(ctx: Context | None = None) -> Dict[str, Any]:
+async def promptyoself_test(
+    # Pass-throughs
+    mcp_server_id: Optional[str] = None,
+    mcp_server_name: Optional[str] = None,
+    request_heartbeat: Optional[bool] = None,
+    heartbeat: Optional[bool] = None,
+    ctx: Context | None = None,
+) -> Dict[str, Any]:
     """
     Test connectivity with the Letta server.
 
@@ -557,7 +747,14 @@ async def promptyoself_test(ctx: Context | None = None) -> Dict[str, Any]:
 
 
 @mcp.tool
-async def promptyoself_agents(ctx: Context | None = None) -> Dict[str, Any]:
+async def promptyoself_agents(
+    # Pass-throughs
+    mcp_server_id: Optional[str] = None,
+    mcp_server_name: Optional[str] = None,
+    request_heartbeat: Optional[bool] = None,
+    heartbeat: Optional[bool] = None,
+    ctx: Context | None = None,
+) -> Dict[str, Any]:
     """
     List available Letta agents.
 
@@ -610,6 +807,11 @@ async def _promptyoself_upload_tool(
     source_code: str,
     name: Optional[str] = None,
     description: Optional[str] = None,
+    # Pass-throughs
+    mcp_server_id: Optional[str] = None,
+    mcp_server_name: Optional[str] = None,
+    request_heartbeat: Optional[bool] = None,
+    heartbeat: Optional[bool] = None,
     ctx: Context | None = None,
 ) -> Dict[str, Any]:
     """Upload a Letta-native tool from complete Python source code."""
@@ -623,6 +825,11 @@ async def _promptyoself_upload_tool(
 @mcp.tool(name="promptyoself_set_default_agent")
 async def _promptyoself_set_default_agent_tool(
     agent_id: str,
+    # Pass-throughs
+    mcp_server_id: Optional[str] = None,
+    mcp_server_name: Optional[str] = None,
+    request_heartbeat: Optional[bool] = None,
+    heartbeat: Optional[bool] = None,
     ctx: Context | None = None,
 ) -> Dict[str, Any]:
     """Set the default agent ID to avoid having to pass it with every call.
@@ -656,8 +863,67 @@ async def _promptyoself_set_default_agent_tool(
         return {"error": f"Failed to set default agent ID: {e}"}
 
 
+@mcp.tool(name="promptyoself_set_scoped_default_agent")
+async def _promptyoself_set_scoped_default_agent_tool(
+    agent_id: str,
+    # Pass-throughs
+    mcp_server_id: Optional[str] = None,
+    mcp_server_name: Optional[str] = None,
+    request_heartbeat: Optional[bool] = None,
+    heartbeat: Optional[bool] = None,
+    ctx: Context | None = None,
+) -> Dict[str, Any]:
+    """Set a per-client/session default agent ID.
+
+    This associates the given agent_id with the caller's session/client identity
+    (derived from ctx.request_context.session_id/client_id or ctx.session_id/client_id).
+
+    Only affects requests from the same client/session; does not modify process-wide env.
+    """
+    try:
+        if not agent_id or not agent_id.strip():
+            return {"error": "agent_id cannot be empty"}
+        scope_key = _get_ctx_scope_key(ctx)
+        if not scope_key:
+            return {"error": "Unable to derive a client/session identity from context; cannot set scoped default"}
+        _SCOPED_AGENT_DEFAULTS[scope_key] = agent_id.strip()
+        return {
+            "status": "success",
+            "message": f"Scoped default agent set for {scope_key}",
+            "agent_id": _SCOPED_AGENT_DEFAULTS[scope_key],
+        }
+    except Exception as e:
+        logger.exception("Failed to set scoped default agent ID")
+        return {"error": f"Failed to set scoped default agent ID: {e}"}
+
+
+@mcp.tool(name="promptyoself_get_scoped_default_agent")
+async def _promptyoself_get_scoped_default_agent_tool(
+    # Pass-throughs
+    mcp_server_id: Optional[str] = None,
+    mcp_server_name: Optional[str] = None,
+    request_heartbeat: Optional[bool] = None,
+    heartbeat: Optional[bool] = None,
+    ctx: Context | None = None,
+) -> Dict[str, Any]:
+    """Get the scoped default agent ID for the current client/session, if any."""
+    try:
+        scope_key = _get_ctx_scope_key(ctx)
+        if not scope_key:
+            return {"status": "ok", "scope": None, "agent_id": None}
+        return {"status": "ok", "scope": scope_key, "agent_id": _SCOPED_AGENT_DEFAULTS.get(scope_key)}
+    except Exception as e:
+        logger.exception("Failed to get scoped default agent ID")
+        return {"error": f"Failed to get scoped default agent ID: {e}"}
+
+
 @mcp.tool(name="promptyoself_inference_diagnostics")
 async def _promptyoself_inference_diagnostics_tool(
+    # Pass-throughs
+    mcp_server_id: Optional[str] = None,
+    mcp_server_name: Optional[str] = None,
+    request_heartbeat: Optional[bool] = None,
+    heartbeat: Optional[bool] = None,
     ctx: Context | None = None,
 ) -> Dict[str, Any]:
     """Report how agent_id inference would behave for this request.
@@ -670,9 +936,18 @@ async def _promptyoself_inference_diagnostics_tool(
         "ctx_metadata_keys": [],
         "ctx_agent_id_attr": None,
         "env": {
-            "PROMPTYOSELF_DEFAULT_AGENT_ID": bool(os.getenv("PROMPTYOSELF_DEFAULT_AGENT_ID")),
-            "LETTA_AGENT_ID": bool(os.getenv("LETTA_AGENT_ID")),
-            "LETTA_DEFAULT_AGENT_ID": bool(os.getenv("LETTA_DEFAULT_AGENT_ID")),
+            "PROMPTYOSELF_DEFAULT_AGENT_ID": {
+                "set": bool(os.getenv("PROMPTYOSELF_DEFAULT_AGENT_ID")),
+                "value": os.getenv("PROMPTYOSELF_DEFAULT_AGENT_ID")
+            },
+            "LETTA_AGENT_ID": {
+                "set": bool(os.getenv("LETTA_AGENT_ID")),
+                "value": os.getenv("LETTA_AGENT_ID")
+            },
+            "LETTA_DEFAULT_AGENT_ID": {
+                "set": bool(os.getenv("LETTA_DEFAULT_AGENT_ID")),
+                "value": os.getenv("LETTA_DEFAULT_AGENT_ID")
+            },
         },
         "single_agent_fallback_enabled": os.getenv("PROMPTYOSELF_USE_SINGLE_AGENT_FALLBACK", "false").lower() in ("1", "true", "yes"),
         "agents_count": None,

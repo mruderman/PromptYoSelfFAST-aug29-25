@@ -46,7 +46,64 @@ bash start.sh tailscale  # auto-detects your tailnet IPv4
 python promptyoself_mcp_server.py --transport http --host 100.x.y.z --port 8000 --path /mcp
 
 # Note: MCP HTTP is not a plain REST API—use an MCP client (e.g., FastMCP Client)
+
+## Letta Integration (HTTP over Tailscale)
+
+- Configure Letta to connect to this FastMCP server over HTTP (streamable) via your tailnet IP.
+- Edit `~/.letta/mcp_config.json` (host‑mounted in your deployment) and add an entry:
+
+```json
+{
+  "mcpServers": {
+    "promptyoself": {
+      "transport": "http",
+      "url": "http://<TAILSCALE_IP>:8000/mcp"
+    }
+  }
+}
 ```
+
+- The Letta MCP client sends `Accept: text/event-stream`. A raw curl to `/mcp` without that header will return 406; this is expected.
+- Wrapper tip: prefer `mcp_server_name` with default `"promptyoself"`; do not require `mcp_server_id`.
+- This server tolerates pass‑through fields (`mcp_server_name`, `mcp_server_id`, `request_heartbeat`, `heartbeat`)—they are accepted and ignored.
+
+See also: `docs/letta-integration.md` for end‑to‑end steps and curl examples.
+
+### Managed MCP Server (Recommended)
+
+Using Letta’s managed MCP helps avoid ADE wrapper issues:
+
+```bash
+export LETTA_URL="http://100.126.136.121:8283"
+export LETTA_TOKEN="$LETTA_SERVER_PASSWORD"
+
+# Add server (streamable HTTP)
+curl -sS -X PUT "$LETTA_URL/v1/tools/mcp/servers" -H "Authorization: Bearer $LETTA_TOKEN" -H "Content-Type: application/json" \
+  -d '{"server_name":"promptyoself","type":"streamable_http","server_url":"http://100.76.47.25:8000/mcp"}'
+
+# Register tools
+for T in promptyoself_inference_diagnostics promptyoself_set_default_agent promptyoself_set_scoped_default_agent promptyoself_get_scoped_default_agent promptyoself_schedule_time promptyoself_schedule_cron promptyoself_schedule_every promptyoself_list promptyoself_cancel promptyoself_execute promptyoself_test promptyoself_agents promptyoself_upload health; do
+  curl -sS -X POST "$LETTA_URL/v1/tools/mcp/servers/promptyoself/$T" -H "Authorization: Bearer $LETTA_TOKEN" -H "Content-Type: application/json"; echo
+done
+
+# Attach to agent
+AGENT_ID="agent-1a4a5989-ab98-478f-9b1f-bbece814ed7a"
+curl -sS "$LETTA_URL/v1/tools/mcp/servers/promptyoself/tools" -H "Authorization: Bearer $LETTA_TOKEN" | jq -r '.[].id' | while read -r TID; do
+  curl -sS -X PATCH "$LETTA_URL/v1/agents/$AGENT_ID/tools/attach/$TID" -H "Authorization: Bearer $LETTA_TOKEN" -H "Content-Type: application/json"; echo
+done
+```
+
+Wrapper guidance:
+- Prefer `mcp_server_name` with default `promptyoself` if wrappers are used; do not require `mcp_server_id`.
+- The MCP server accepts and ignores pass‑through fields (`mcp_server_name`, `mcp_server_id`, `request_heartbeat`, `heartbeat`).
+```
+
+start.sh flags:
+
+- `--agent-id`/`-a`: sets LETTA_AGENT_ID and PROMPTYOSELF_DEFAULT_AGENT_ID
+- `--single`: enables single‑agent fallback (if exactly one agent)
+- `--env-file FILE`: sources an additional env file after `.env`
+- `--host tailscale` or `tailscale` transport: resolves/binds to your Tailscale IPv4
 
 ### Testing
 ```bash
@@ -58,7 +115,7 @@ pytest tests/unit/
 pytest tests/integration/
 pytest tests/e2e/
 
-# Run with coverage reporting (temporary 35% minimum; stepping up toward 80%)
+# Run with coverage reporting (project threshold is ~67%)
 pytest --cov=promptyoself_mcp_server --cov=promptyoself --cov-report=html
 ```
 
@@ -77,7 +134,7 @@ python -m promptyoself.cli register --agent-id <agent_id> --prompt "prompt text"
 python -m promptyoself.cli register --agent-id <agent_id> --prompt "Daily check-in" --cron "0 9 * * *"
 
 # Register an interval schedule
-python -m promptyoself.cli register --agent-id <agent_id> --prompt "Focus check" --every "30m" --start-at "2025-01-02T15:00:00Z" --max-repetitions 10
+python -m promptyoself.cli register --agent-id <agent_id> --prompt "Focus check" --every "30m" --start-at "2026-01-02T15:00:00Z" --max-repetitions 10
 
 # List schedules
 python -m promptyoself.cli list
@@ -88,6 +145,30 @@ python -m promptyoself.cli execute
 # Run scheduler daemon
 python -m promptyoself.cli execute --loop --interval 60
 ```
+
+## Agent ID Handling & Diagnostics
+
+Most tools require an `agent_id`.
+
+- Prefer explicit `agent_id` in tool calls.
+- Or set a default:
+  - `LETTA_AGENT_ID` or `PROMPTYOSELF_DEFAULT_AGENT_ID` in env
+  - `promptyoself_set_default_agent { "agent_id": "agt_..." }`
+- Or set a per‑client/session default:
+  - `promptyoself_set_scoped_default_agent { "agent_id": "agt_..." }`
+  - `promptyoself_get_scoped_default_agent {}`
+- Optional single‑agent fallback: `PROMPTYOSELF_USE_SINGLE_AGENT_FALLBACK=true`.
+
+Diagnostics:
+- `promptyoself_inference_diagnostics {}` returns `inferred_agent_id` and `inference_debug` with the resolution source.
+
+Compatibility:
+- The scheduling tools accept both `agent_id` and the alias `agentId`.
+
+Wrapper compatibility (Letta ADE):
+- Use optional `mcp_server_name` with a default (e.g., `promptyoself`).
+- Do not require `mcp_server_id`—official SDK/docs route MCP by server name.
+- Forwarding `mcp_server_name`/`mcp_server_id`/`request_heartbeat`/`heartbeat` is safe; the server will ignore them.
 
 ## Architecture Overview
 
@@ -109,17 +190,22 @@ The system consists of:
 
 The FastMCP server exposes these tools:
 
-- promptyoself_schedule: General scheduler (provide exactly one of time, cron, or every).
-- promptyoself_schedule_time: Strict one-time variant with an ISO-8601 datetime (e.g., `2025-12-25T10:00:00Z`).
-- promptyoself_schedule_cron: Strict recurring variant with a standard 5-field cron string (e.g., `0 9 * * *`).
-- promptyoself_schedule_every: Strict interval variant with every/start_at/max_repetitions (e.g., `every="30m"`).
+
+- promptyoself_schedule_time: Strict one-time variant with an ISO-8601 datetime (e.g., `2025-12-25T10:00:00Z`). Accepts `agent_id` or `agentId`.
+- promptyoself_schedule_cron: Strict recurring variant with a standard 5-field cron string (e.g., `0 9 * * *`). Accepts `agent_id` or `agentId`.
+- promptyoself_schedule_every: Strict interval variant with every/start_at/max_repetitions (e.g., `every="30m"`). Accepts `agent_id` or `agentId`.
 - promptyoself_list: List schedules with optional filtering.
 - promptyoself_cancel: Cancel schedules by ID.
 - promptyoself_execute: Execute due prompts (once or loop mode).
 - promptyoself_test: Test Letta connectivity.
 - promptyoself_agents: List available Letta agents.
 - promptyoself_upload: Upload Letta-native tools from source code.
+- promptyoself_set_default_agent: Set a process‑local default agent for the server session.
+- promptyoself_set_scoped_default_agent: Set a per‑client/session default agent for the calling client.
+- promptyoself_get_scoped_default_agent: Get the per‑client/session default agent for the calling client.
 - health: Server health and configuration status.
+**Note**: Always use future timestamps in tool usage to avoid validation errors. Past timestamps will be rejected by the scheduler.
+
 
 ### Core Modules
 
@@ -171,8 +257,8 @@ The FastMCP server exposes these tools:
 ```bash
 # Letta Connection (choose one authentication method)
 LETTA_API_KEY=your-api-key                    # For cloud Letta instances
-LETTA_SERVER_PASSWORD=TWIJftq/ufbbxo8w51m/BQ1wBNrZb/JTlmnopxyz           # For self-hosted Letta
-LETTA_BASE_URL=https://cyansociety.a.pinggy.link/ #Letta server URL
+LETTA_SERVER_PASSWORD=your_password_here            # For self-hosted Letta
+LETTA_BASE_URL=https://your-letta-host:8283         # Letta server URL
 
 # Database Configuration
 PROMPTYOSELF_DB=/path/to/promptyoself.db     # SQLite database file
@@ -255,7 +341,7 @@ The test suite is organized into three tiers:
 ```ini
 [pytest]
 testpaths = tests
-addopts = -v --cov=promptyoself_mcp_server --cov=promptyoself --cov-fail-under=35
+addopts = -v --cov=promptyoself_mcp_server --cov=promptyoself --cov-fail-under=67
 markers =
     unit: Unit tests
     integration: Integration tests  

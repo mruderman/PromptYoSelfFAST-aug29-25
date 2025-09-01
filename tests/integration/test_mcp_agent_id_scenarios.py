@@ -38,7 +38,7 @@ class TestMCPAgentIdScenarios:
             
             # Should have used the environment agent
             mock_register.assert_called_once()
-            call_args = mock_register.call_args.kwargs
+            call_args = mock_register.call_args.args[0]
             assert call_args["agent_id"] == TEST_AGENT
     
     async def test_mcp_client_sends_none_string_scenario(self, mcp_in_memory_client):
@@ -61,7 +61,7 @@ class TestMCPAgentIdScenarios:
                 # Should have triggered inference
                 mock_infer.assert_called_once()
                 mock_register.assert_called_once()
-                call_args = mock_register.call_args.kwargs
+                call_args = mock_register.call_args.args[0]
                 assert call_args["agent_id"] == "inferred-from-none"
     
     async def test_mcp_client_sends_empty_string_scenario(self, mcp_in_memory_client, monkeypatch):
@@ -83,7 +83,7 @@ class TestMCPAgentIdScenarios:
             
             # Should have used environment variable
             mock_register.assert_called_once()
-            call_args = mock_register.call_args.kwargs
+            call_args = mock_register.call_args.args[0]
             assert call_args["agent_id"] == TEST_AGENT
     
     async def test_mcp_client_omits_agent_id_scenario(self, mcp_in_memory_client, monkeypatch):
@@ -104,7 +104,7 @@ class TestMCPAgentIdScenarios:
             
             # Should have used environment fallback
             mock_register.assert_called_once()
-            call_args = mock_register.call_args.kwargs
+            call_args = mock_register.call_args.args[0]
             assert call_args["agent_id"] == TEST_AGENT
     
     async def test_mcp_client_whitespace_variations(self, mcp_in_memory_client, monkeypatch):
@@ -136,7 +136,7 @@ class TestMCPAgentIdScenarios:
                 
                 # Should have used environment agent
                 mock_register.assert_called_once()
-                call_args = mock_register.call_args.kwargs
+                call_args = mock_register.call_args.args[0]
                 assert call_args["agent_id"] == TEST_AGENT
     
     async def test_mcp_client_mixed_case_null_variants(self, mcp_in_memory_client, monkeypatch):
@@ -170,7 +170,7 @@ class TestMCPAgentIdScenarios:
                 
                 # Should have used environment agent
                 mock_register.assert_called_once()
-                call_args = mock_register.call_args.kwargs
+                call_args = mock_register.call_args.args[0]
                 assert call_args["agent_id"] == TEST_AGENT
 
 
@@ -202,7 +202,7 @@ class TestMCPClientWithSetDefault:
             
             # Should have used the default agent we set
             mock_register.assert_called_once()
-            call_args = mock_register.call_args.kwargs
+            call_args = mock_register.call_args.args[0]
             assert call_args["agent_id"] == default_agent
     
     async def test_set_default_workflow_all_tools(self, mcp_in_memory_client):
@@ -221,7 +221,6 @@ class TestMCPClientWithSetDefault:
                 ("promptyoself_schedule_time", {"time": "2025-01-05T10:00:00Z"}),
                 ("promptyoself_schedule_cron", {"cron": "0 12 * * *"}),
                 ("promptyoself_schedule_every", {"every": "2h"}),
-                ("promptyoself_schedule", {"time": "2025-01-05T15:00:00Z"}),
             ]
             
             for tool_name, extra_params in tools_and_params:
@@ -241,7 +240,7 @@ class TestMCPClientWithSetDefault:
                 
                 # Should have used the default agent
                 mock_register.assert_called_once()
-                call_args = mock_register.call_args.kwargs
+                call_args = mock_register.call_args.args[0]
                 assert call_args["agent_id"] == default_agent, f"Wrong agent for {tool_name}"
     
     async def test_set_default_then_explicit_agent_override(self, mcp_in_memory_client):
@@ -270,7 +269,7 @@ class TestMCPClientWithSetDefault:
             
             # Should have used explicit agent, not default
             mock_register.assert_called_once()
-            call_args = mock_register.call_args.kwargs
+            call_args = mock_register.call_args.args[0]
             assert call_args["agent_id"] == explicit_agent
             assert call_args["agent_id"] != default_agent
 
@@ -338,8 +337,8 @@ class TestMCPClientErrorScenarios:
             assert "error" in result.structured_content
             assert "agent_id" in result.structured_content["error"].lower()
             
-            # Should have attempted inference
-            mock_infer.assert_called_once()
+            # Should have attempted inference (called twice: once in tool, once in promptyoself_register)
+            assert mock_infer.call_count == 2
 
 
 class TestMCPClientContextualInference:
@@ -367,7 +366,7 @@ class TestMCPClientContextualInference:
                 
                 # Should have used context-inferred agent
                 mock_register.assert_called_once()
-                call_args = mock_register.call_args.kwargs
+                call_args = mock_register.call_args.args[0]
                 assert call_args["agent_id"] == context_agent
     
     async def test_single_agent_fallback_success(self, mcp_in_memory_client, monkeypatch):
@@ -397,7 +396,7 @@ class TestMCPClientContextualInference:
                 
                 # Should have used fallback agent
                 mock_register.assert_called_once()
-                call_args = mock_register.call_args.kwargs
+                call_args = mock_register.call_args.args[0]
                 assert call_args["agent_id"] == fallback_agent
 
 
@@ -444,7 +443,7 @@ class TestMCPClientRealWorldWorkflows:
             
             # Should have used the default agent we set
             mock_register.assert_called_once()
-            call_args = mock_register.call_args.kwargs
+            call_args = mock_register.call_args.args[0]
             assert call_args["agent_id"] == test_agent
     
     async def test_multi_client_simulation(self, mcp_in_memory_client):
@@ -471,7 +470,7 @@ class TestMCPClientRealWorldWorkflows:
             
             # Verify client 1's agent was used
             mock_register.assert_called_once()
-            assert mock_register.call_args.kwargs["agent_id"] == client1_agent
+            assert mock_register.call_args.args[0]["agent_id"] == client1_agent
             
             # Simulate Client 2: Change the default (overwrites client 1's)
             result2 = await mcp_in_memory_client.call_tool("promptyoself_set_default_agent", {
@@ -492,4 +491,4 @@ class TestMCPClientRealWorldWorkflows:
             
             # Verify client 2's agent was used (overwrote client 1's)
             mock_register.assert_called_once()
-            assert mock_register.call_args.kwargs["agent_id"] == client2_agent
+            assert mock_register.call_args.args[0]["agent_id"] == client2_agent

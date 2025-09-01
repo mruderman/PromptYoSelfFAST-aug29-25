@@ -54,12 +54,13 @@ Error response:
 Schedule a one-time prompt at an exact datetime.
 
 Inputs
-- agent_id (str, optional)
+- agent_id (str, optional) — camelCase alias `agentId` is also accepted
 - prompt (str, required)
 - time (str, required) — ISO 8601 datetime in the future. Accepted forms:
-  - 2025-08-31T09:50:22Z (UTC)
-  - 2025-08-31T09:50:22+00:00 (offset)
-  - 2025-08-31 09:50:22 UTC (normalized to Z)
+  - 2025-12-25T09:50:22Z (UTC)
+  - 2025-12-25T09:50:22+00:00 (offset)
+  - 2025-12-25 09:50:22 UTC (normalized to Z)
+  Note: Past timestamps will result in validation errors.
 - skip_validation (bool, optional, default False)
 
 Example
@@ -76,7 +77,7 @@ Example
 Schedule a recurring prompt using a cron expression.
 
 Inputs
-- agent_id (str, optional)
+- agent_id (str, optional) — camelCase alias `agentId` is also accepted
 - prompt (str, required)
 - cron (str, required) — Standard 5-field cron (m h dom mon dow). Examples:
   - "0 9 * * *" (every day at 09:00)
@@ -98,7 +99,7 @@ Example
 Schedule a repeating prompt using an interval.
 
 Inputs
-- agent_id (str, optional)
+- agent_id (str, optional) — camelCase alias `agentId` is also accepted
 - prompt (str, required)
 - every (str, required) — Interval like "30s", "5m", or "1h" (integer seconds allowed, e.g., "45")
 - start_at (str, optional) — ISO datetime in the future when the interval should begin
@@ -110,7 +111,7 @@ Example
   "agent_id": "agt_abc123",
   "prompt": "Focus check",
   "every": "30m",
-  "start_at": "2025-01-02T15:00:00Z",
+  "start_at": "2025-12-25T15:00:00Z",
   "max_repetitions": 10
 }
 
@@ -119,7 +120,7 @@ Example
 ## Agent ID Inference & Diagnostics
 
 PromptYoSelf needs a valid Letta `agent_id` to deliver prompts. You can provide it explicitly, or let the server infer it in this order:
-- context metadata (if your MCP client forwards it),
+- context metadata (if your MCP client forwards it; if present but invalid/null, prevents fallback to later sources),
 - environment variables set on the server process,
 - single-agent fallback (if enabled and exactly one agent exists).
 
@@ -174,6 +175,12 @@ Example result (abbreviated):
 }
 ```
 
+Scoped defaults (per client/session):
+
+- Set a scoped default: `promptyoself_set_scoped_default_agent { "agent_id": "agt_..." }`
+- Get the current scoped default: `promptyoself_get_scoped_default_agent {}`
+- Set a process‑wide default (env): `promptyoself_set_default_agent { "agent_id": "agt_..." }`
+
 Recipe: two minutes from now
 - Use interval once:
 ```
@@ -184,6 +191,14 @@ Recipe: two minutes from now
 }
 ```
 Note: still requires a resolvable `agent_id` via explicit arg, ctx, or env.
+
+---
+
+Integration Notes
+
+- Managed MCP (recommended): Register the `promptyoself` server and tools in Letta via API and attach them to agents. Letta routes tools by server name; no need to pass server selectors in tool args.
+- Pass‑through fields: This server accepts and ignores `mcp_server_name`, `mcp_server_id`, `request_heartbeat`, `heartbeat`. Forwarding them from wrappers will not cause errors.
+- Agent ID: Tools accept `agent_id` or camelCase `agentId`. Inference uses context → scoped default → env → single‑agent fallback.
 
 ---
 
@@ -210,13 +225,62 @@ Error responses:
 
 ## Agent ID Inference
 
-When `agent_id` is not provided, the server tries to infer it in this order:
+When `agent_id` is not explicitly provided in the request arguments, the server tries to infer it in this order:
 
-- Context metadata: If the MCP client provides `ctx.metadata` with `agent_id`/`agentId`/`letta_agent_id`/`caller_agent_id`, or a direct `ctx.agent_id` attribute.
+- Context metadata: If the MCP client provides `ctx.metadata` with `agent_id`/`agentId`/`letta_agent_id`/`caller_agent_id`, or a direct `ctx.agent_id` attribute. If context is present but contains invalid/null values, no fallback occurs.
 - Environment defaults: `PROMPTYOSELF_DEFAULT_AGENT_ID`, `LETTA_AGENT_ID`, or `LETTA_DEFAULT_AGENT_ID`.
 - Single‑agent fallback: If `PROMPTYOSELF_USE_SINGLE_AGENT_FALLBACK=true` and the Letta server lists exactly one agent, it will be used.
 
 If none of these yield an agent ID, the request fails with `{ "error": "agent_id is required and could not be inferred" }`. In multi‑agent setups, prefer explicit `agent_id`.
+
+---
+
+## Tool: promptyoself_set_default_agent
+
+Set a process‑local default agent ID for this server session (writes to environment in‑process).
+
+Inputs
+- agent_id (str, required)
+
+Success response
+{
+  "status": "success",
+  "message": "Default agent ID set to: agt_...",
+  "agent_id": "agt_...",
+  "note": "This setting only applies to the current server session"
+}
+
+---
+
+## Tool: promptyoself_set_scoped_default_agent
+
+Set a per‑client/session default agent. Does not modify process env; only affects requests from the same client/session.
+
+Inputs
+- agent_id (str, required)
+
+Success response
+{
+  "status": "success",
+  "message": "Scoped default agent set for <scope_id>",
+  "agent_id": "agt_..."
+}
+
+---
+
+## Tool: promptyoself_get_scoped_default_agent
+
+Get the scoped default agent for the current client/session (if any).
+
+Inputs
+- none
+
+Success response
+{
+  "status": "ok",
+  "scope": "<scope_id_or_null>",
+  "agent_id": "agt_... or null"
+}
 
 ---
 
@@ -359,7 +423,7 @@ Register (interval with start):
   "prompt": "Focus check",
   "every": "5m",
   "max_repetitions": 10,
-  "start_at": "2025-01-02T15:00:00Z"
+  "start_at": "2025-12-25T15:00:00Z"
 }
 
 List:

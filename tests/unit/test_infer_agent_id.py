@@ -96,8 +96,27 @@ class TestEdgeCasesAndFailures:
         assert agent is None
         assert debug.get("source") is None
 
+    def test_null_agent_id_in_metadata_with_env_cleanup(self):
+        """Test null agent_id with proper environment cleanup."""
+        import os
+        # Clear all relevant env vars for this test
+        for env_var in ["LETTA_AGENT_ID", "PROMPTYOSELF_DEFAULT_AGENT_ID", "LETTA_DEFAULT_AGENT_ID"]:
+            if env_var in os.environ:
+                del os.environ[env_var]
+
+        ctx = DummyCtx(metadata={"agent_id": None})
+        agent, debug = srv._infer_agent_id(ctx)
+        assert agent is None
+        assert debug.get("source") is None
+
     def test_empty_string_agent_id_in_metadata(self):
         """Test when agent_id is present but empty string."""
+        import os
+        # Clear all relevant env vars for this test
+        for env_var in ["LETTA_AGENT_ID", "PROMPTYOSELF_DEFAULT_AGENT_ID", "LETTA_DEFAULT_AGENT_ID"]:
+            if env_var in os.environ:
+                del os.environ[env_var]
+
         ctx = DummyCtx(metadata={"agent_id": ""})
         agent, debug = srv._infer_agent_id(ctx)
         assert agent is None
@@ -105,6 +124,12 @@ class TestEdgeCasesAndFailures:
 
     def test_whitespace_only_agent_id(self):
         """Test when agent_id contains only whitespace."""
+        import os
+        # Clear all relevant env vars for this test
+        for env_var in ["LETTA_AGENT_ID", "PROMPTYOSELF_DEFAULT_AGENT_ID", "LETTA_DEFAULT_AGENT_ID"]:
+            if env_var in os.environ:
+                del os.environ[env_var]
+
         ctx = DummyCtx(metadata={"agent_id": "   "})
         agent, debug = srv._infer_agent_id(ctx)
         assert agent is None
@@ -112,6 +137,12 @@ class TestEdgeCasesAndFailures:
 
     def test_non_string_agent_id(self):
         """Test when agent_id is not a string."""
+        import os
+        # Clear all relevant env vars for this test
+        for env_var in ["LETTA_AGENT_ID", "PROMPTYOSELF_DEFAULT_AGENT_ID", "LETTA_DEFAULT_AGENT_ID"]:
+            if env_var in os.environ:
+                del os.environ[env_var]
+
         test_cases = [123, [], {}, True, 0.5]
         for invalid_value in test_cases:
             ctx = DummyCtx(metadata={"agent_id": invalid_value})
@@ -134,12 +165,18 @@ class TestEdgeCasesAndFailures:
 
     def test_metadata_conversion_failure(self):
         """Test when metadata can't be converted to dict-like."""
+        import os
+        # Clear all relevant env vars for this test
+        for env_var in ["LETTA_AGENT_ID", "PROMPTYOSELF_DEFAULT_AGENT_ID", "LETTA_DEFAULT_AGENT_ID"]:
+            if env_var in os.environ:
+                del os.environ[env_var]
+
         class BadMetadata:
             def __dict__(self):
                 raise Exception("Cannot convert to dict")
             def keys(self):
                 raise Exception("Cannot get keys")
-        
+
         ctx = DummyCtx(metadata=BadMetadata())
         agent, debug = srv._infer_agent_id(ctx)
         # Should handle gracefully and not crash
@@ -148,19 +185,31 @@ class TestEdgeCasesAndFailures:
 
     def test_context_attribute_access_failure(self):
         """Test when accessing context attributes raises exceptions."""
+        import os
+        # Clear all relevant env vars for this test
+        for env_var in ["LETTA_AGENT_ID", "PROMPTYOSELF_DEFAULT_AGENT_ID", "LETTA_DEFAULT_AGENT_ID"]:
+            if env_var in os.environ:
+                del os.environ[env_var]
+
         class BadContext:
             @property
             def metadata(self):
                 raise AttributeError("Cannot access metadata")
-            
+
             @property
             def agent_id(self):
                 raise AttributeError("Cannot access agent_id")
-        
+
         ctx = BadContext()
         agent, debug = srv._infer_agent_id(ctx)
         # Should handle gracefully and not crash
         assert agent is None
+        assert debug.get("source") is None
+        # Should have empty metadata keys since access failed
+        assert debug.get("context_metadata_keys") == []
+        # Should have checked env vars
+        assert "env_checked" in debug
+        assert debug["env_checked"]["PROMPTYOSELF_DEFAULT_AGENT_ID"] is False
 
 
 class TestEnvironmentVariableInference:
@@ -393,6 +442,84 @@ class TestDebugInformation:
         assert debug.get("source") is None
         assert "env_checked" in debug
         assert debug.get("single_agent_fallback") is False
+
+
+class TestRequestContextMetadataInference:
+    """Test agent_id inference from request_context metadata (Letta-style)."""
+
+    def test_request_context_metadata_agent_id(self):
+        """Test inference from request_context.metadata.agent_id."""
+        class MockRequestContext:
+            def __init__(self, agent_id):
+                self.metadata = {"agent_id": agent_id}
+
+        class MockContext:
+            def __init__(self, agent_id):
+                self.request_context = MockRequestContext(agent_id)
+
+        ctx = MockContext(TEST_AGENT)
+        agent, debug = srv._infer_agent_id(ctx)
+        assert agent == TEST_AGENT
+        assert debug.get("source") == "context.request_context.metadata"
+        assert debug.get("key") == "agent_id"
+
+    def test_request_context_nested_agent_id(self):
+        """Test inference from request_context.metadata.agent.id."""
+        class MockRequestContext:
+            def __init__(self):
+                self.metadata = {"agent": {"id": TEST_AGENT}}
+
+        class MockContext:
+            def __init__(self):
+                self.request_context = MockRequestContext()
+
+        ctx = MockContext()
+        agent, debug = srv._infer_agent_id(ctx)
+        assert agent == TEST_AGENT
+        assert debug.get("source") == "context.request_context.metadata.nested"
+        assert debug.get("key") == "agent.id"
+
+    def test_request_context_attr_metadata(self):
+        """Test inference from request_context.metadata (attribute access)."""
+        class MockRequestContext:
+            def __init__(self):
+                self.meta = {"agent_id": TEST_AGENT}  # Different attr name
+
+        class MockContext:
+            def __init__(self):
+                self.request_context = MockRequestContext()
+
+        ctx = MockContext()
+        agent, debug = srv._infer_agent_id(ctx)
+        assert agent == TEST_AGENT
+        assert debug.get("source") == "context.request_context.meta"
+        assert debug.get("key") == "agent_id"
+
+    def test_request_context_metadata_priority(self):
+        """Test that request_context takes priority over regular context."""
+        # Context has agent_id, but request_context should override
+        request_ctx_agent = "request-context-agent"
+
+        import os
+        # Clear all relevant env vars for this test
+        for env_var in ["LETTA_AGENT_ID", "PROMPTYOSELF_DEFAULT_AGENT_ID", "LETTA_DEFAULT_AGENT_ID"]:
+            if env_var in os.environ:
+                del os.environ[env_var]
+
+        class MockRequestContext:
+            def __init__(self):
+                self.metadata = {"agent_id": request_ctx_agent}
+
+        class MockContext:
+            def __init__(self):
+                self.request_context = MockRequestContext()
+                self.metadata = {"agent_id": "regular-context-agent"}  # Should be ignored
+
+        ctx = MockContext()
+        agent, debug = srv._infer_agent_id(ctx)
+        assert agent == request_ctx_agent
+        assert debug.get("source") == "context.request_context.metadata"
+        assert debug.get("key") == "agent_id"
 
 
 def test_infer_none_when_unavailable(monkeypatch):
