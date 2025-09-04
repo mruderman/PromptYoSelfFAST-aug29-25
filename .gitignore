@@ -32,6 +32,7 @@ ENV/
 
 # Logs
 *.log
+logs/
 
 # Testing
 .pytest_cache/
@@ -46,3 +47,4 @@ build/
 .env
 !.env.example
 *.db
+promptyoself.db
