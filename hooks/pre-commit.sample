@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# Sample pre-commit hook to prevent committing .db files and warn about large files
+# Install by copying to .git/hooks/pre-commit and making it executable
+
+STAGED_DB=$(git diff --cached --name-only --diff-filter=ACM | grep -E '\.db$' || true)
+if [ -n "$STAGED_DB" ]; then
+  echo "Aborting commit: the following .db files are staged (we generally keep DBs out of git):"
+  echo "$STAGED_DB"
+  echo "If you really intend to commit a DB, remove this hook or adjust .gitignore and proceed intentionally."
+  exit 1
+fi
+
+# optional: warn on large files > 5MB
+LARGE=$(git diff --cached --numstat | awk '$1 ~ /^[0-9]+$/ && $1 > (5*1024) {print $3}' || true)
+if [ -n "$LARGE" ]; then
+  echo "Warning: committing large files:"
+  echo "$LARGE"
+fi
+
+exit 0
