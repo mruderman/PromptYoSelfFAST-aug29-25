@@ -202,6 +202,15 @@ export PROMPTYOSELF_DEFAULT_AGENT_ID=agt_...
 export PROMPTYOSELF_USE_SINGLE_AGENT_FALLBACK=true  # optional
 ```
 
+## Default Deployment
+
+For any default deployment of the PromptYoSelf MCP Server:
+
+- Persistence: set `PROMPTYOSELF_DB` to a volume‑mounted path. The `start.sh` script defaults to `./data/promptyoself.sqlite3` when unset, or `/data/promptyoself.sqlite3` if `/data` exists.
+- Autostart executor: run the execute loop in the background via `--autostart-executor` or `PROMPTYOSELF_EXECUTOR_AUTOSTART=true`. The server defaults to autostart; `start.sh --no-executor` disables it.
+- Access: bind HTTP to localhost or a Tailscale IP. Use `./start.sh http` (localhost) or `./start.sh tailscale`.
+- Time: keep NTP synchronized; scheduling respects wall‑clock time. Ensure `timedatectl`, `chrony`, or `ntpd` is configured.
+
 ## Multi‑Agent Usage
 
 When multiple Letta agents share the same PromptYoSelf server:

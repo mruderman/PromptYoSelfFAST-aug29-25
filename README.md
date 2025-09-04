@@ -59,6 +59,19 @@ This avoids ADE wrapper friction. If you use ADE wrappers, ensure they do not re
 
 ## 🚀 Quick Start
 
+### Quick Usage
+
+```bash
+# HTTP on localhost with persistent DB and executor autostart
+./start.sh http --port 8000 --path /mcp
+
+# HTTP bound to your Tailscale IP (auto-detected)
+./start.sh tailscale --port 8000 --path /mcp
+
+# Opt out of the background executor loop
+./start.sh http --no-executor
+```
+
 1. **Install Dependencies**
 
   This project has two sets of dependencies. Install both.
@@ -154,6 +167,15 @@ Environment file:
 ### Environment Variables
 
 The server requires configuration for connecting to your Letta instance. **Never commit real secrets to version control!**
+
+### Default Deployment (Recommended)
+
+For any default deployment of the PromptYoSelf MCP Server:
+
+- Persistence: set `PROMPTYOSELF_DB` to a volume‑mounted path. The `start.sh` script defaults to `./data/promptyoself.sqlite3` when unset, or `/data/promptyoself.sqlite3` if `/data` exists.
+- Autostart executor: enable the execute loop in the background using `--autostart-executor` (or `PROMPTYOSELF_EXECUTOR_AUTOSTART=true`). The server defaults to autostart; use `start.sh --no-executor` to opt out.
+- Access: bind HTTP to localhost or a Tailscale IP. Use `./start.sh http` (binds `127.0.0.1`) or `./start.sh tailscale` to bind to your tailnet address.
+- Time: keep NTP synchronized on the host; scheduling uses wall‑clock time. Ensure `timedatectl`, `chrony`, or `ntpd` is configured appropriately.
 
 ### Local Development Setup
 

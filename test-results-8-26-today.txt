@@ -1,7 +1,0 @@
-ImportError while loading conftest '/root/sanctum-letta-mcp/tests/conftest.py'.
-tests/conftest.py:21: in <module>
-    import promptyoself_mcp_server as srv
-promptyoself_mcp_server.py:33: in <module>
-    from fastmcp import FastMCP, Context
-E   ModuleNotFoundError: No module named 'fastmcp'
-

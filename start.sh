@@ -24,8 +24,9 @@ DEFAULT_AGENT_ID=""
 ENABLE_SINGLE_FALLBACK="false"
 ENV_FILE=""
 USE_TAILSCALE="false"
-ENABLE_EXECUTOR="false"
+ENABLE_EXECUTOR="true"
 EXECUTOR_INTERVAL="60"
+PERSISTENT_DB_DEFAULT=""
 
 # Parse args
 while [[ $# -gt 0 ]]; do
@@ -48,11 +49,13 @@ while [[ $# -gt 0 ]]; do
       USE_TAILSCALE="true"; shift ;;
     --executor)
       ENABLE_EXECUTOR="true"; shift ;;
+    --no-executor)
+      ENABLE_EXECUTOR="false"; shift ;;
     --executor-interval)
       EXECUTOR_INTERVAL="${2:-60}"; shift 2 ;;
     *)
       echo "Unknown argument: $1" >&2
-      echo "Usage: $0 [stdio|http|sse|tailscale] [--agent-id ID] [--single] [--env-file FILE] [--host HOST|tailscale] [--port PORT] [--path PATH] [--tailscale]" >&2
+      echo "Usage: $0 [stdio|http|sse|tailscale] [--agent-id ID] [--single] [--env-file FILE] [--host HOST|tailscale] [--port PORT] [--path PATH] [--tailscale] [--executor|--no-executor] [--executor-interval SECS]" >&2
       exit 2 ;;
   esac
 done
@@ -84,6 +87,26 @@ fi
 if [[ "$ENABLE_EXECUTOR" == "true" ]]; then
   export PROMPTYOSELF_EXECUTOR_AUTOSTART=true
   export PROMPTYOSELF_EXECUTOR_INTERVAL="$EXECUTOR_INTERVAL"
+fi
+
+# Ensure a persistent database path by default if not provided
+if [[ -z "${PROMPTYOSELF_DB:-}" ]]; then
+  # Prefer common container/host-mount locations if available
+  if [[ -d "/data" && -w "/data" ]]; then
+    PERSISTENT_DB_DEFAULT="/data/promptyoself.sqlite3"
+  elif [[ -d "/app/promptyoself/instance" || "${TRANSPORT}" == "tailscale" || "${HOST}" == "tailscale" ]]; then
+    # Create Docker-style instance dir if running in container-like layout
+    mkdir -p /app/promptyoself/instance 2>/dev/null || true
+    if [[ -w "/app/promptyoself/instance" ]]; then
+      PERSISTENT_DB_DEFAULT="/app/promptyoself/instance/unified.sqlite3"
+    fi
+  fi
+  # Fallback to repo-local ./data directory
+  if [[ -z "$PERSISTENT_DB_DEFAULT" ]]; then
+    mkdir -p ./data
+    PERSISTENT_DB_DEFAULT="$(pwd)/data/promptyoself.sqlite3"
+  fi
+  export PROMPTYOSELF_DB="$PERSISTENT_DB_DEFAULT"
 fi
 
 resolve_tailscale_ip() {

@@ -19,7 +19,7 @@ Run examples:
 Environment:
 - LETTA_BASE_URL (default http://localhost:8283)
 - LETTA_API_KEY or LETTA_SERVER_PASSWORD
-- PROMPTYOSELF_DB (defaults to promptyoself.db if not set in plugin)
+- PROMPTYOSELF_DB (defaults to a persistent path if available; see start.sh)
 """
 
 from __future__ import annotations
@@ -57,6 +57,7 @@ except ImportError:  # Make import tolerant for environments without fastmcp
 
 # Import PromptYoSelf CLI module functions (direct, not subprocess)
 from promptyoself import cli as pys_cli
+from promptyoself.db import get_db_file as _pys_get_db_file
 
 # Map CLI functions
 _register_prompt = pys_cli.register_prompt
@@ -1054,11 +1055,19 @@ async def health() -> Dict[str, Any]:
     Returns:
         JSON dict with status and relevant configuration hints.
     """
+    # Resolve effective DB path via shared DB module, not raw env
+    try:
+        db_path = _pys_get_db_file()
+    except Exception:
+        db_path = os.getenv("PROMPTYOSELF_DB", "promptyoself.db")
+
     return {
         "status": "healthy",
         "letta_base_url": os.getenv("LETTA_BASE_URL", "http://localhost:8283"),
-        "db": os.getenv("PROMPTYOSELF_DB", "promptyoself.db"),
+        "db": db_path,
         "auth_set": bool(os.getenv("LETTA_API_KEY") or os.getenv("LETTA_SERVER_PASSWORD")),
+        "executor_autostart": os.getenv("PROMPTYOSELF_EXECUTOR_AUTOSTART", "true").lower() in ("1", "true", "yes"),
+        "executor_interval": int(os.getenv("PROMPTYOSELF_EXECUTOR_INTERVAL", "60")),
     }
 
 
@@ -1125,6 +1134,11 @@ def main() -> None:
     args = parser.parse_args()
 
     logger.info("Starting PromptYoSelf MCP Server", extra={"transport": args.transport})
+    # Soft reminder regarding time sync for correct scheduling
+    logger.info(
+        "Scheduling uses wall clock time; ensure NTP is synchronized on this host",
+        extra={"hint": "Use timedatectl/chrony/ntpd depending on your OS"}
+    )
 
     # Optional background executor
     if getattr(args, "autostart_executor", False):

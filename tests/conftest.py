@@ -28,7 +28,8 @@ except Exception:
     _fake = types.SimpleNamespace(Letta=object, MessageCreate=object, TextContent=object)
     _sys.modules['letta_client'] = _fake
 
-import promptyoself_mcp_server as srv
+# Defer importing the server until fixtures run to ensure coverage captures it
+srv = None  # will be imported inside fixtures
 
 
 @pytest.fixture(scope="session")
@@ -49,6 +50,11 @@ async def mcp_in_memory_client():
         from fastmcp import Client
     except ImportError as e:
         pytest.skip(f"fastmcp is required for these tests: {e}")
+
+    # Import the server lazily to avoid importing before coverage starts
+    global srv
+    if srv is None:
+        import promptyoself_mcp_server as srv  # type: ignore
 
     client = Client(srv.mcp)  # in-memory transport by passing server instance
     async with client:
