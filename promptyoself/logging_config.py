@@ -266,7 +266,7 @@ def configure_logging(log_dir: Optional[str] = None,
     global _logger_config
     
     # Get configuration from environment variables
-    log_dir = log_dir or os.getenv("PROMPTYOSELF_LOG_DIR", ".")
+    log_dir = log_dir or os.getenv("PROMPTYOSELF_LOG_DIR", "logs")
     log_level = os.getenv("PROMPTYOSELF_LOG_LEVEL", log_level)
     enable_console = os.getenv("PROMPTYOSELF_LOG_CONSOLE", "true").lower() == "true"
     enable_file = os.getenv("PROMPTYOSELF_LOG_FILE", "true").lower() == "true"
