@@ -484,7 +484,6 @@ async def _promptyoself_schedule_time_tool(
         prompt: str,
         time: str,
         agent_id: Optional[str] = None,
-        agentId: Optional[str] = None,  # alias accepted from some clients
         # Pass-throughs from some clients/routers – accepted and ignored
         mcp_server_id: Optional[str] = None,
         mcp_server_name: Optional[str] = None,
@@ -518,16 +517,10 @@ async def _promptyoself_schedule_time_tool(
             "agent_id_raw": repr(agent_id),
             "agent_id_type": type(agent_id).__name__,
             "agent_id_truthy": bool(agent_id),
-            "agentId_raw": repr(agentId),
-            "agentId_truthy": bool(agentId),
             "prompt_length": len(prompt) if prompt else 0,
             "time": time,
             "skip_validation": skip_validation
         })
-
-        # Prefer explicit alias if primary is missing
-        if (not agent_id or not str(agent_id).strip()) and agentId and str(agentId).strip():
-            agent_id = agentId
 
         # Normalize agent_id handling - treat string "None" as None
         if agent_id is not None and str(agent_id).strip().lower() in ("none", "null", ""):
@@ -559,7 +552,6 @@ async def _promptyoself_schedule_cron_tool(
         prompt: str,
         cron: str,
         agent_id: Optional[str] = None,
-        agentId: Optional[str] = None,  # alias accepted from some clients
         # Pass-throughs from some clients/routers – accepted and ignored
         mcp_server_id: Optional[str] = None,
         mcp_server_name: Optional[str] = None,
@@ -588,10 +580,6 @@ async def _promptyoself_schedule_cron_tool(
             "cron": "0 9 * * *"
         }
         """
-        # Prefer explicit alias if primary is missing
-        if (not agent_id or not str(agent_id).strip()) and agentId and str(agentId).strip():
-            agent_id = agentId
-
         # Normalize agent_id handling - treat string "None" as None
         if agent_id is not None and str(agent_id).strip().lower() in ("none", "null", ""):
             agent_id = None
@@ -617,7 +605,6 @@ async def _promptyoself_schedule_every_tool(
         start_at: Optional[str] = None,
         max_repetitions: Optional[int] = None,
         agent_id: Optional[str] = None,
-        agentId: Optional[str] = None,  # alias accepted from some clients
         # Pass-throughs from some clients/routers – accepted and ignored
         mcp_server_id: Optional[str] = None,
         mcp_server_name: Optional[str] = None,
@@ -647,10 +634,6 @@ async def _promptyoself_schedule_every_tool(
             "max_repetitions": 10
         }
         """
-        # Prefer explicit alias if primary is missing
-        if (not agent_id or not str(agent_id).strip()) and agentId and str(agentId).strip():
-            agent_id = agentId
-
         # Normalize agent_id handling - treat string "None" as None
         if agent_id is not None and str(agent_id).strip().lower() in ("none", "null", ""):
             agent_id = None

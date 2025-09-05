@@ -177,7 +177,8 @@ Diagnostics:
 - `promptyoself_inference_diagnostics {}` returns `inferred_agent_id` and `inference_debug` with the resolution source.
 
 Compatibility:
-- The scheduling tools accept both `agent_id` and the alias `agentId`.
+- **IMPORTANT**: As of September 2025, the scheduling tools now only accept `agent_id` parameter. The `agentId` alias has been removed to simplify the API for Letta ADE integration.
+- Letta ADE is the only client using this MCP server, so dual parameter support was unnecessary complexity.
 
 Wrapper compatibility (Letta ADE):
 - Use optional `mcp_server_name` with a default (e.g., `promptyoself`).
@@ -205,9 +206,9 @@ The system consists of:
 The FastMCP server exposes these tools:
 
 
-- promptyoself_schedule_time: Strict one-time variant with an ISO-8601 datetime (e.g., `2025-12-25T10:00:00Z`). Accepts `agent_id` or `agentId`.
-- promptyoself_schedule_cron: Strict recurring variant with a standard 5-field cron string (e.g., `0 9 * * *`). Accepts `agent_id` or `agentId`.
-- promptyoself_schedule_every: Strict interval variant with every/start_at/max_repetitions (e.g., `every="30m"`). Accepts `agent_id` or `agentId`.
+- promptyoself_schedule_time: Strict one-time variant with an ISO-8601 datetime (e.g., `2025-12-25T10:00:00Z`). Accepts `agent_id` parameter only.
+- promptyoself_schedule_cron: Strict recurring variant with a standard 5-field cron string (e.g., `0 9 * * *`). Accepts `agent_id` parameter only.
+- promptyoself_schedule_every: Strict interval variant with every/start_at/max_repetitions (e.g., `every="30m"`). Accepts `agent_id` parameter only.
 - promptyoself_list: List schedules with optional filtering.
 - promptyoself_cancel: Cancel schedules by ID.
 - promptyoself_execute: Execute due prompts (once or loop mode).
@@ -270,9 +271,13 @@ The FastMCP server exposes these tools:
 
 ```bash
 # Letta Connection (choose one authentication method)
-LETTA_API_KEY=your-api-key                    # For cloud Letta instances
-LETTA_SERVER_PASSWORD=your_password_here            # For self-hosted Letta
-LETTA_BASE_URL=https://your-letta-host:8283         # Letta server URL
+LETTA_API_KEY=your-api-key                          # For cloud Letta instances
+LETTA_SERVER_PASSWORD=TWIJftq/ufbbxo8w51m/BQ1wBNrZb/JTlmnopxyz  # For self-hosted Letta (current password)
+LETTA_BASE_URL=http://localhost:8283                # Letta server URL (local deployment)
+
+# Agent Configuration
+LETTA_AGENT_ID=agent-ff18d65c-1f8f-4ca7-9013-2e4e526fd2f4      # Default agent ID
+PROMPTYOSELF_USE_SINGLE_AGENT_FALLBACK=true          # Fallback to single agent if available
 
 # Database Configuration
 PROMPTYOSELF_DB=/path/to/promptyoself.db     # SQLite database file
@@ -403,11 +408,20 @@ Performance indexes include due-time and agent/activity composites (see Index(..
 5. Update integration tests
 
 ### Debugging Connection Issues
-1. Check environment variables: `python -c "import os; print(os.environ.get('LETTA_BASE_URL'))"`
-2. Test Letta connectivity: `python -m promptyoself.cli test`
-3. Verify agent exists: `python -m promptyoself.cli agents`
-4. Check server health: Test `health` MCP tool
-5. Review structured logs for error context
+1. **Environment Loading**: Ensure MCP server processes load .env properly:
+   ```bash
+   set -a && source .env && set +a && python promptyoself_mcp_server.py --transport http --host 127.0.0.1 --port 8000 --path /mcp
+   ```
+2. **Check environment variables**: `python -c "import os; print(os.environ.get('LETTA_BASE_URL'))"`
+3. **Test Letta connectivity**: `set -a && source .env && set +a && python -m promptyoself.cli test`
+4. **Verify agent exists**: `set -a && source .env && set +a && python -m promptyoself.cli agents`
+5. **Check server health**: Test `health` MCP tool
+6. **Review structured logs**: Look for authentication errors and agent ID resolution issues
+
+### Common Authentication Issues
+- **401 Unauthorized**: Usually indicates MCP server processes are not loading updated .env file
+- **Agent not found**: Use `promptyoself_agents` tool to list available agents
+- **Password mismatch**: Ensure LETTA_SERVER_PASSWORD matches current Letta server configuration
 
 ### Performance Optimization
 - Database indexes are optimized for schedule queries
